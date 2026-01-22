@@ -111,3 +111,5 @@ secrets/
 
 # Keep .env.example
 !.env.example
+
+CLAUDE.md
