@@ -12,7 +12,7 @@ Beliefs have confidence scores that can be reinforced or decayed.
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -78,18 +78,13 @@ class BeliefMemoryStore:
             decay_factor=self.decay_factor,
         )
 
-    async def _get_connection(self) -> aiosqlite.Connection:
-        """Get database connection and ensure schema exists."""
-        conn = await aiosqlite.connect(self.db_path)
-        conn.row_factory = aiosqlite.Row
-
+    async def _ensure_initialized(self, conn: aiosqlite.Connection) -> None:
+        """Ensure schema exists."""
         if not self._initialized:
             await conn.executescript(SCHEMA)
             await conn.commit()
             self._initialized = True
             logger.debug("Belief database schema initialized")
-
-        return conn
 
     async def store(self, belief: BeliefMemory) -> str:
         """
@@ -103,7 +98,9 @@ class BeliefMemoryStore:
         Returns:
             Belief ID.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             # Check if belief already exists
             cursor = await conn.execute(
                 "SELECT id, confidence, reinforcement_count FROM beliefs WHERE belief_type = ? AND value = ?",
@@ -138,7 +135,7 @@ class BeliefMemoryStore:
                         new_confidence,
                         new_count,
                         json.dumps(merged_sources),
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                         existing["id"],
                     ),
                 )
@@ -193,7 +190,9 @@ class BeliefMemoryStore:
         Returns:
             BeliefMemory or None.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 "SELECT * FROM beliefs WHERE id = ?",
                 (belief_id,),
@@ -222,7 +221,9 @@ class BeliefMemoryStore:
         Returns:
             List of beliefs ordered by confidence.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT * FROM beliefs
@@ -251,7 +252,9 @@ class BeliefMemoryStore:
         Returns:
             List of beliefs ordered by confidence.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT * FROM beliefs
@@ -365,14 +368,16 @@ class BeliefMemoryStore:
         Args:
             belief_id: Belief ID.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             await conn.execute(
                 """
                 UPDATE beliefs
                 SET user_confirmed = 1, confidence = MAX(confidence, 0.8), updated_at = ?
                 WHERE id = ?
                 """,
-                (datetime.utcnow().isoformat(), belief_id),
+                (datetime.now(timezone.utc).isoformat(), belief_id),
             )
             await conn.commit()
 
@@ -385,14 +390,16 @@ class BeliefMemoryStore:
         Returns:
             Number of beliefs decayed.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 UPDATE beliefs
                 SET confidence = confidence * ?, updated_at = ?
                 WHERE user_confirmed = 0 AND confidence > 0.1
                 """,
-                (self.decay_factor, datetime.utcnow().isoformat()),
+                (self.decay_factor, datetime.now(timezone.utc).isoformat()),
             )
             await conn.commit()
             decayed = cursor.rowcount
@@ -410,7 +417,9 @@ class BeliefMemoryStore:
         Returns:
             Number of beliefs removed.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 "DELETE FROM beliefs WHERE confidence < ? AND user_confirmed = 0",
                 (min_confidence,),
@@ -481,7 +490,9 @@ class BeliefMemoryStore:
         Returns:
             Dict with statistics.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             # Total beliefs
             cursor = await conn.execute("SELECT COUNT(*) as count FROM beliefs")
             row = await cursor.fetchone()
@@ -527,7 +538,9 @@ class BeliefMemoryStore:
         Returns:
             Number of beliefs deleted.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             if belief_type:
                 cursor = await conn.execute(
                     "DELETE FROM beliefs WHERE belief_type = ?",

@@ -11,7 +11,7 @@ Enables queries like "Show me papers like the one I searched for last week".
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -84,18 +84,13 @@ class EpisodicMemoryStore:
 
         logger.info("Episodic memory store initialized", db_path=self.db_path)
 
-    async def _get_connection(self) -> aiosqlite.Connection:
-        """Get database connection and ensure schema exists."""
-        conn = await aiosqlite.connect(self.db_path)
-        conn.row_factory = aiosqlite.Row
-
+    async def _ensure_initialized(self, conn: aiosqlite.Connection) -> None:
+        """Ensure schema exists."""
         if not self._initialized:
             await conn.executescript(SCHEMA)
             await conn.commit()
             self._initialized = True
             logger.debug("Database schema initialized")
-
-        return conn
 
     async def store(self, memory: EpisodicMemory) -> str:
         """
@@ -107,7 +102,9 @@ class EpisodicMemoryStore:
         Returns:
             Memory ID.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             await conn.execute(
                 """
                 INSERT INTO episodic_memories (
@@ -147,7 +144,9 @@ class EpisodicMemoryStore:
         Returns:
             EpisodicMemory or None if not found.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 "SELECT * FROM episodic_memories WHERE id = ?",
                 (memory_id,),
@@ -192,14 +191,16 @@ class EpisodicMemoryStore:
             params.append(action_type)
 
         if hours:
-            cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
             conditions.append("created_at > ?")
             params.append(cutoff)
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         params.append(limit)
 
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 f"""
                 SELECT * FROM episodic_memories
@@ -228,7 +229,9 @@ class EpisodicMemoryStore:
         Returns:
             List of matching memories.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT * FROM episodic_memories
@@ -257,7 +260,9 @@ class EpisodicMemoryStore:
         Returns:
             List of memories referencing the paper.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT * FROM episodic_memories
@@ -292,7 +297,9 @@ class EpisodicMemoryStore:
 
         memory.add_feedback(paper_id, liked)
 
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             await conn.execute(
                 """
                 UPDATE episodic_memories
@@ -302,7 +309,7 @@ class EpisodicMemoryStore:
                 (
                     json.dumps(memory.liked_paper_ids),
                     json.dumps(memory.disliked_paper_ids),
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     memory_id,
                 ),
             )
@@ -328,7 +335,9 @@ class EpisodicMemoryStore:
             memory_id: Associated memory ID.
             metadata: Additional metadata.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             await conn.execute(
                 """
                 INSERT INTO paper_interactions (
@@ -388,7 +397,9 @@ class EpisodicMemoryStore:
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         params.append(limit)
 
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 f"""
                 SELECT * FROM paper_interactions
@@ -417,9 +428,11 @@ class EpisodicMemoryStore:
         Returns:
             List of papers with view counts.
         """
-        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT arxiv_id, COUNT(*) as view_count
@@ -448,7 +461,9 @@ class EpisodicMemoryStore:
         Returns:
             List of ArXiv IDs.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             cursor = await conn.execute(
                 """
                 SELECT DISTINCT arxiv_id
@@ -470,7 +485,9 @@ class EpisodicMemoryStore:
         Returns:
             Dict with statistics.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             # Total memories
             cursor = await conn.execute("SELECT COUNT(*) as count FROM episodic_memories")
             row = await cursor.fetchone()
@@ -516,7 +533,9 @@ class EpisodicMemoryStore:
         Returns:
             Number of memories deleted.
         """
-        async with await self._get_connection() as conn:
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
             if session_id:
                 cursor = await conn.execute(
                     "DELETE FROM episodic_memories WHERE session_id = ?",

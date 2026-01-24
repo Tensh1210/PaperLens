@@ -11,7 +11,7 @@ Handles memory consolidation and context building for the agent.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -115,7 +115,7 @@ class MemoryManager:
         """
         context: dict[str, Any] = {
             "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Working memory context
