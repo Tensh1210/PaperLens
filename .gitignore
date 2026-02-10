@@ -112,4 +112,5 @@ secrets/
 # Keep .env.example
 !.env.example
 
-CLAUDE.md
+# Test scripts (temporary)
+scripts/test_*.py

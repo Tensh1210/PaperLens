@@ -11,12 +11,14 @@ from typing import Any
 
 import structlog
 from litellm import acompletion, completion
+import time
 from tenacity import (
     retry,
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
 )
+from litellm.exceptions import RateLimitError
 
 from src.config import settings
 
@@ -73,9 +75,9 @@ class LLMService:
         )
 
     @retry(
-        retry=retry_if_exception_type((ConnectionError, TimeoutError)),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, RateLimitError)),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=5, max=60),
         reraise=True,
     )
     def chat_completion(
@@ -119,10 +121,11 @@ class LLMService:
                 output_length=len(content) if content else 0,
             )
             return content or ""
+        except RateLimitError:
+            logger.warning("Rate limit hit, will retry with backoff...")
+            raise  # Let tenacity handle retry
         except Exception as e:
             logger.error("Chat completion failed", error=str(e))
-            if "rate_limit" in str(e).lower():
-                raise LLMRateLimitError(f"Rate limit exceeded: {e}") from e
             raise LLMError(f"Chat completion failed: {e}") from e
 
     @retry(

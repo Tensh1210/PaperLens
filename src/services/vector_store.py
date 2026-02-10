@@ -4,6 +4,7 @@ Vector store service using Qdrant.
 Handles storage and retrieval of paper embeddings.
 """
 
+import hashlib
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
@@ -124,8 +125,10 @@ class VectorStore:
 
         points = []
         for paper, embedding in zip(papers, embeddings):
+            # Generate a valid integer ID from arxiv_id using hash
+            point_id = int(hashlib.md5(paper.arxiv_id.encode()).hexdigest()[:15], 16)
             point = models.PointStruct(
-                id=paper.arxiv_id.replace(".", "_").replace("/", "_"),  # Qdrant ID
+                id=point_id,
                 vector=embedding,
                 payload={
                     "arxiv_id": paper.arxiv_id,
@@ -210,10 +213,10 @@ class VectorStore:
         if must_conditions:
             query_filter = models.Filter(must=must_conditions)
 
-        # Execute search
-        results = self.client.search(
+        # Execute search using query_points (new API in qdrant-client 1.7+)
+        response = self.client.query_points(
             collection_name=self.collection_name,
-            query_vector=query_vector,
+            query=query_vector,
             limit=limit,
             query_filter=query_filter,
             score_threshold=min_score,
@@ -221,7 +224,7 @@ class VectorStore:
 
         # Convert to PaperSearchResult
         search_results = []
-        for result in results:
+        for result in response.points:
             paper = Paper(
                 arxiv_id=result.payload["arxiv_id"],
                 title=result.payload["title"],
@@ -243,7 +246,7 @@ class VectorStore:
             info = self.client.get_collection(self.collection_name)
             return {
                 "name": self.collection_name,
-                "vectors_count": info.vectors_count,
+                "vectors_count": info.indexed_vectors_count,
                 "points_count": info.points_count,
                 "status": info.status,
             }

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     
     # Model selection
     llm_provider: str = "groq"  # groq or openai
-    llm_model: str = "llama-3.1-70b-versatile"  # Groq model
+    llm_model: str = "llama-3.3-70b-versatile"  # Groq model
     
     # =========================================================================
     # Vector Database (Qdrant)
@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     # =========================================================================
     # Embedding Model
     # =========================================================================
-    embedding_model: str = "allenai/specter2"
-    embedding_dimension: int = 768  # SPECTER2 dimension
+    embedding_model: str = "sentence-transformers/allenai-specter"
+    embedding_dimension: int = 768  # SPECTER dimension
     
     # =========================================================================
     # API Configuration
@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # Agent Configuration
     # =========================================================================
-    agent_max_iterations: int = 10  # Max ReAct loops before stopping
+    agent_max_iterations: int = 5  # Max ReAct loops before stopping
     agent_temperature: float = 0.7  # LLM temperature for reasoning
     agent_timeout: int = 60  # Timeout in seconds for agent execution
 

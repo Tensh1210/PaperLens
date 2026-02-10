@@ -57,10 +57,10 @@ class HuggingFaceDataLoader:
             self.load_dataset()
 
         count = 0
-        for item in self._dataset:
+        for idx, item in enumerate(self._dataset):
             # Parse paper from dataset item
-            paper = self._parse_paper(item)
-            
+            paper = self._parse_paper(item, idx)
+
             if paper is None:
                 continue
 
@@ -77,26 +77,40 @@ class HuggingFaceDataLoader:
 
         logger.info("Papers loaded", count=count)
 
-    def _parse_paper(self, item: dict) -> Paper | None:
+    def _parse_paper(self, item: dict, idx: int = 0) -> Paper | None:
         """
         Parse a dataset item into a Paper object.
 
         Args:
             item: Raw item from HuggingFace dataset.
+            idx: Index of the item in the dataset (used for ID generation).
 
         Returns:
             Paper object or None if parsing fails.
         """
         try:
-            # Extract arxiv_id
-            arxiv_id = item.get("id", "")
-            if not arxiv_id:
-                # Try to extract from other fields
-                arxiv_id = item.get("arxiv_id", "") or item.get("paper_id", "")
-            
-            if not arxiv_id:
-                logger.warning("Paper missing arxiv_id", item_keys=list(item.keys()))
+            # Extract title and abstract first - skip if missing
+            title = str(item.get("title", "") or "").strip()
+            abstract = str(item.get("abstract", "") or "").strip()
+
+            if not title or not abstract:
                 return None
+
+            # Extract arxiv_id from various possible fields
+            arxiv_id = (
+                item.get("id")
+                or item.get("arxiv_id")
+                or item.get("paper_id")
+                or item.get("Unnamed: 0")
+            )
+
+            # Convert to string and validate
+            if arxiv_id is not None:
+                arxiv_id = str(arxiv_id).strip()
+
+            # Generate ID from index if not available
+            if not arxiv_id:
+                arxiv_id = f"paper_{idx:06d}"
 
             # Extract categories
             categories_raw = item.get("categories", "")
@@ -109,9 +123,9 @@ class HuggingFaceDataLoader:
 
             # Create Paper object
             paper = Paper(
-                arxiv_id=arxiv_id.strip(),
-                title=item.get("title", "").strip(),
-                abstract=item.get("abstract", "").strip(),
+                arxiv_id=arxiv_id,
+                title=title,
+                abstract=abstract,
                 authors=self._parse_authors(item.get("authors", "")),
                 categories=categories,
                 published=self._parse_date(item.get("published", "")),

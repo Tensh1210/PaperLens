@@ -154,7 +154,7 @@ class TestDataLoader:
         assert len(paper.categories) == 2
 
     def test_parse_paper_missing_id(self):
-        """Test parsing paper without ID returns None."""
+        """Test parsing paper without ID generates an ID."""
         from src.clients.data_loader import HuggingFaceDataLoader
 
         loader = HuggingFaceDataLoader()
@@ -165,7 +165,9 @@ class TestDataLoader:
         }
 
         paper = loader._parse_paper(item)
-        assert paper is None
+        assert paper is not None
+        assert paper.arxiv_id.startswith("paper_")
+        assert paper.title == "Test Paper"
 
     def test_parse_categories_string(self):
         """Test parsing categories from string."""
@@ -213,7 +215,7 @@ class TestConfig:
 
             assert settings.qdrant_host == "localhost"
             assert settings.qdrant_port == 6333
-            assert settings.embedding_model == "allenai/specter2"
+            assert settings.embedding_model == "sentence-transformers/allenai-specter"
             assert settings.embedding_dimension == 768
 
     def test_qdrant_url_property(self):
