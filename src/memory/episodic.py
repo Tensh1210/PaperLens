@@ -616,7 +616,8 @@ if __name__ == "__main__":
 
         # Retrieve it
         retrieved = await store.get(memory.id)
-        print(f"Retrieved: {retrieved.query}")
+        if retrieved:
+            print(f"Retrieved: {retrieved.query}")
 
         # Get recent
         recent = await store.get_recent(limit=5)

@@ -4,6 +4,7 @@ Chat routes for PaperLens API.
 Provides the main agentic chat interface for interacting with the paper search engine.
 """
 
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
 
@@ -131,7 +132,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         agent = get_agent()
         session_id = request.session_id or str(uuid4())
 
-        async def generate():
+        async def generate() -> AsyncIterator[str]:
             try:
                 # For now, we run the full agent and return the result
                 # True streaming would require restructuring the ReAct loop

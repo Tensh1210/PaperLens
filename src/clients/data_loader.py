@@ -58,7 +58,7 @@ class HuggingFaceDataLoader:
             self.load_dataset()
 
         count = 0
-        for idx, item in enumerate(self._dataset):  # type: ignore[arg-type]
+        for idx, item in enumerate(self._dataset):  # type: ignore[arg-type, var-annotated]
             # Parse paper from dataset item
             paper = self._parse_paper(item, idx)
 

@@ -29,7 +29,13 @@ sys.path.insert(0, str(project_root))
 
 import structlog
 from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 
 from src.clients.data_loader import HuggingFaceDataLoader
 from src.models.paper import Paper
