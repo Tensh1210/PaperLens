@@ -29,10 +29,9 @@ sys.path.insert(0, str(project_root))
 
 import structlog
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from src.clients.data_loader import HuggingFaceDataLoader
-from src.config import settings
 from src.models.paper import Paper
 from src.services.embedding import EmbeddingService
 from src.services.vector_store import VectorStore

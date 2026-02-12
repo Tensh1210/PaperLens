@@ -11,7 +11,7 @@ Enables queries like "Show me papers like the one I searched for last week".
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ import aiosqlite
 import structlog
 
 from src.config import settings
-from src.models.memory import EpisodicMemory, MemoryType
+from src.models.memory import EpisodicMemory
 
 logger = structlog.get_logger()
 
@@ -131,8 +131,9 @@ class EpisodicMemoryStore:
             )
             await conn.commit()
 
-        logger.debug("Stored episodic memory", id=memory.id, query=memory.query[:30])
-        return memory.id
+        memory_id: str = memory.id
+        logger.debug("Stored episodic memory", id=memory_id, query=memory.query[:30])
+        return memory_id
 
     async def get(self, memory_id: str) -> EpisodicMemory | None:
         """
@@ -179,8 +180,8 @@ class EpisodicMemoryStore:
         """
         limit = limit or settings.memory_episodic_limit
 
-        conditions = []
-        params = []
+        conditions: list[str] = []
+        params: list[str | int] = []
 
         if session_id:
             conditions.append("session_id = ?")
@@ -191,7 +192,7 @@ class EpisodicMemoryStore:
             params.append(action_type)
 
         if hours:
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
             conditions.append("created_at > ?")
             params.append(cutoff)
 
@@ -309,7 +310,7 @@ class EpisodicMemoryStore:
                 (
                     json.dumps(memory.liked_paper_ids),
                     json.dumps(memory.disliked_paper_ids),
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                     memory_id,
                 ),
             )
@@ -379,8 +380,8 @@ class EpisodicMemoryStore:
         Returns:
             List of interaction records.
         """
-        conditions = []
-        params = []
+        conditions: list[str] = []
+        params: list[str | int] = []
 
         if arxiv_id:
             conditions.append("arxiv_id = ?")
@@ -428,7 +429,7 @@ class EpisodicMemoryStore:
         Returns:
             List of papers with view counts.
         """
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
@@ -491,19 +492,19 @@ class EpisodicMemoryStore:
             # Total memories
             cursor = await conn.execute("SELECT COUNT(*) as count FROM episodic_memories")
             row = await cursor.fetchone()
-            total_memories = row["count"]
+            total_memories = row["count"] if row else 0
 
             # Total interactions
             cursor = await conn.execute("SELECT COUNT(*) as count FROM paper_interactions")
             row = await cursor.fetchone()
-            total_interactions = row["count"]
+            total_interactions = row["count"] if row else 0
 
             # Unique papers interacted with
             cursor = await conn.execute(
                 "SELECT COUNT(DISTINCT arxiv_id) as count FROM paper_interactions"
             )
             row = await cursor.fetchone()
-            unique_papers = row["count"]
+            unique_papers = row["count"] if row else 0
 
             # Memories by action type
             cursor = await conn.execute(
@@ -578,7 +579,7 @@ class EpisodicMemoryStore:
         """Synchronous wrapper for store."""
         return asyncio.get_event_loop().run_until_complete(self.store(memory))
 
-    def get_recent_sync(self, **kwargs) -> list[EpisodicMemory]:
+    def get_recent_sync(self, **kwargs: Any) -> list[EpisodicMemory]:
         """Synchronous wrapper for get_recent."""
         return asyncio.get_event_loop().run_until_complete(self.get_recent(**kwargs))
 
@@ -597,7 +598,7 @@ def get_episodic_store() -> EpisodicMemoryStore:
 
 if __name__ == "__main__":
     # Quick test
-    async def test():
+    async def test() -> None:
         store = EpisodicMemoryStore("data/test_memory.db")
 
         # Create a memory

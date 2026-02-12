@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.agent.agent import PaperLensAgent, get_agent, AgentError
+from src.agent.agent import AgentError, get_agent
 
 logger = structlog.get_logger()
 
@@ -113,14 +113,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     except AgentError as e:
         logger.error("Agent error", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}") from e
     except Exception as e:
         logger.error("Chat failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
     """
     Send a message and stream the response.
 
@@ -138,11 +138,11 @@ async def chat_stream(request: ChatRequest):
                 result = agent.run(request.message, session_id=session_id)
 
                 # Send metadata first
-                yield f"data: {{\n"
+                yield "data: {\n"
                 yield f'data:   "session_id": "{result.session_id}",\n'
                 yield f'data:   "papers": {result.papers},\n'
                 yield f'data:   "steps": {len(result.steps)}\n'
-                yield f"data: }}\n\n"
+                yield "data: }\n\n"
 
                 # Send response in chunks to simulate streaming
                 chunk_size = 50
@@ -167,7 +167,7 @@ async def chat_stream(request: ChatRequest):
 
     except Exception as e:
         logger.error("Stream chat failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================
@@ -201,7 +201,7 @@ async def get_session_info(session_id: str) -> SessionInfo:
         raise
     except Exception as e:
         logger.error("Failed to get session info", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/chat/session/{session_id}/history", response_model=ConversationResponse)
@@ -235,7 +235,7 @@ async def get_conversation_history(session_id: str) -> ConversationResponse:
         raise
     except Exception as e:
         logger.error("Failed to get history", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.delete("/chat/session/{session_id}")
@@ -261,7 +261,7 @@ async def clear_session(session_id: str) -> dict[str, str]:
         raise
     except Exception as e:
         logger.error("Failed to clear session", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/chat/session")
@@ -284,7 +284,7 @@ async def create_session() -> dict[str, str]:
 
     except Exception as e:
         logger.error("Failed to create session", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================
@@ -322,4 +322,4 @@ async def get_available_tools() -> ToolsResponse:
 
     except Exception as e:
         logger.error("Failed to get tools", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

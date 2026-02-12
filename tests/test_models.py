@@ -2,8 +2,8 @@
 Tests for PaperLens data models.
 """
 
+
 import pytest
-from datetime import datetime
 
 
 class TestPaper:

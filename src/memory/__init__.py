@@ -9,11 +9,11 @@ Provides multi-store memory architecture:
 - Manager: Unified orchestration
 """
 
-from src.memory.working import WorkingMemory, get_working_memory
-from src.memory.semantic import SemanticMemory, get_semantic_memory
-from src.memory.episodic import EpisodicMemoryStore, get_episodic_store
 from src.memory.belief import BeliefMemoryStore, get_belief_store
+from src.memory.episodic import EpisodicMemoryStore, get_episodic_store
 from src.memory.manager import MemoryManager, get_memory_manager
+from src.memory.semantic import SemanticMemory, get_semantic_memory
+from src.memory.working import WorkingMemory, get_working_memory
 
 __all__ = [
     # Working memory

@@ -13,8 +13,6 @@ from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.memory.semantic import SemanticMemory, get_semantic_memory
-from src.memory.working import WorkingMemory, get_working_memory
-from src.models.paper import Paper, PaperSearchResult
 from src.services.llm import LLMService, get_llm_service
 
 logger = structlog.get_logger()
@@ -108,7 +106,7 @@ class SearchPapersTool(Tool):
     def __init__(self, semantic_memory: SemanticMemory | None = None):
         self.semantic_memory = semantic_memory or get_semantic_memory()
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         query: str,
         limit: int | None = None,
@@ -171,7 +169,7 @@ class GetPaperTool(Tool):
     def __init__(self, semantic_memory: SemanticMemory | None = None):
         self.semantic_memory = semantic_memory or get_semantic_memory()
 
-    def execute(self, arxiv_id: str, **kwargs: Any) -> ToolResult:
+    def execute(self, arxiv_id: str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         """Get paper details."""
         try:
             paper = self.semantic_memory.get_paper(arxiv_id)
@@ -226,7 +224,7 @@ class GetRelatedPapersTool(Tool):
     def __init__(self, semantic_memory: SemanticMemory | None = None):
         self.semantic_memory = semantic_memory or get_semantic_memory()
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         arxiv_id: str,
         limit: int | None = None,
@@ -301,7 +299,7 @@ class ComparePapersTool(Tool):
         self.semantic_memory = semantic_memory or get_semantic_memory()
         self.llm_service = llm_service or get_llm_service()
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         paper_ids: list[str],
         aspects: list[str] | None = None,
@@ -408,7 +406,7 @@ class SummarizePaperTool(Tool):
         self.semantic_memory = semantic_memory or get_semantic_memory()
         self.llm_service = llm_service or get_llm_service()
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         arxiv_id: str,
         style: str = "detailed",
@@ -498,19 +496,19 @@ class RecallMemoryTool(Tool):
         },
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Import here to avoid circular imports
-        from src.memory.episodic import get_episodic_store
-        self._episodic = None
+        from src.memory.episodic import EpisodicMemoryStore, get_episodic_store
+        self._episodic: EpisodicMemoryStore | None = None
         self._get_store = get_episodic_store
 
     @property
-    def episodic(self):
+    def episodic(self) -> Any:
         if self._episodic is None:
             self._episodic = self._get_store()
         return self._episodic
 
-    def execute(
+    def execute(  # type: ignore[override]
         self,
         query: str,
         limit: int = 5,
@@ -561,7 +559,7 @@ class RecallMemoryTool(Tool):
 class ToolRegistry:
     """Registry of available tools for the agent."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
@@ -625,7 +623,8 @@ if __name__ == "__main__":
     print("Available tools:")
     for name in registry.list_tools():
         tool = registry.get(name)
-        print(f"  - {name}: {tool.description[:50]}...")
+        if tool:
+            print(f"  - {name}: {tool.description[:50]}...")
 
     print("\nTool schemas:")
     for schema in registry.get_schemas():

@@ -2,7 +2,6 @@
 Pytest configuration and fixtures for PaperLens tests.
 """
 
-import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -188,6 +187,7 @@ def tool_registry():
 def test_client():
     """Create a FastAPI test client."""
     from fastapi.testclient import TestClient
+
     from src.api.main import app
 
     return TestClient(app)

@@ -245,7 +245,7 @@ class WorkingMemory:
             List of conversation messages.
         """
         state = self.get_session(session_id)
-        messages = state.messages
+        messages: list[ConversationMessage] = state.messages
 
         if max_messages:
             messages = messages[-max_messages:]
@@ -291,7 +291,8 @@ class WorkingMemory:
             List of agent steps.
         """
         state = self.get_session(session_id)
-        return state.agent_steps
+        steps: list[AgentStep] = state.agent_steps
+        return steps
 
     def get_retrieved_papers(self, session_id: str) -> list[str]:
         """
@@ -304,7 +305,8 @@ class WorkingMemory:
             List of ArXiv IDs.
         """
         state = self.get_session(session_id)
-        return state.retrieved_paper_ids
+        paper_ids: list[str] = state.retrieved_paper_ids
+        return paper_ids
 
     def get_context_summary(self, session_id: str) -> dict[str, Any]:
         """

@@ -11,7 +11,7 @@ Handles memory consolidation and context building for the agent.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import structlog
@@ -115,7 +115,7 @@ class MemoryManager:
         """
         context: dict[str, Any] = {
             "session_id": session_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Working memory context
@@ -548,8 +548,9 @@ class MemoryManager:
             Session ID.
         """
         state = self.working.get_session(session_id)
-        logger.info("Started session", session_id=state.session_id)
-        return state.session_id
+        sid: str = state.session_id
+        logger.info("Started session", session_id=sid)
+        return sid
 
     async def end_session(self, session_id: str) -> None:
         """
@@ -607,7 +608,7 @@ def get_memory_manager() -> MemoryManager:
 
 if __name__ == "__main__":
     # Quick test
-    async def test():
+    async def test() -> None:
         manager = MemoryManager()
 
         # Start a session

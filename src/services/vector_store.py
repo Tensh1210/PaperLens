@@ -5,11 +5,12 @@ Handles storage and retrieval of paper embeddings.
 """
 
 import hashlib
+from collections.abc import Sequence
+
 import structlog
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
-from typing import Sequence
 
 from src.config import settings
 from src.models.paper import Paper, PaperSearchResult
@@ -37,7 +38,7 @@ class VectorStore:
         self.host = host or settings.qdrant_host
         self.port = port or settings.qdrant_port
         self.collection_name = collection_name or settings.qdrant_collection
-        
+
         self._client: QdrantClient | None = None
 
     @property
@@ -50,7 +51,7 @@ class VectorStore:
 
     def create_collection(
         self,
-        vector_size: int = None,
+        vector_size: int | None = None,
         recreate: bool = False,
     ) -> None:
         """
@@ -84,7 +85,7 @@ class VectorStore:
                     distance=models.Distance.COSINE,
                 ),
             )
-            
+
             # Create payload indexes for filtering
             self.client.create_payload_index(
                 collection_name=self.collection_name,
@@ -96,7 +97,7 @@ class VectorStore:
                 field_name="categories",
                 field_schema=models.PayloadSchemaType.KEYWORD,
             )
-            
+
             logger.info("Collection created", collection=self.collection_name)
         else:
             logger.info("Collection already exists", collection=self.collection_name)
@@ -182,8 +183,8 @@ class VectorStore:
         min_score = min_score if min_score is not None else settings.search_min_score
 
         # Build filter conditions
-        must_conditions = []
-        
+        must_conditions: list[models.FieldCondition | models.IsEmptyCondition | models.IsNullCondition | models.HasIdCondition | models.HasVectorCondition | models.NestedCondition | models.Filter] = []
+
         if year_from is not None:
             must_conditions.append(
                 models.FieldCondition(
@@ -191,7 +192,7 @@ class VectorStore:
                     range=models.Range(gte=year_from),
                 )
             )
-        
+
         if year_to is not None:
             must_conditions.append(
                 models.FieldCondition(
@@ -199,7 +200,7 @@ class VectorStore:
                     range=models.Range(lte=year_to),
                 )
             )
-        
+
         if categories:
             must_conditions.append(
                 models.FieldCondition(
@@ -225,13 +226,14 @@ class VectorStore:
         # Convert to PaperSearchResult
         search_results = []
         for result in response.points:
+            payload = result.payload or {}
             paper = Paper(
-                arxiv_id=result.payload["arxiv_id"],
-                title=result.payload["title"],
-                abstract=result.payload["abstract"],
-                authors=result.payload.get("authors", []),
-                categories=result.payload.get("categories", []),
-                citation_count=result.payload.get("citation_count", 0),
+                arxiv_id=payload["arxiv_id"],
+                title=payload["title"],
+                abstract=payload["abstract"],
+                authors=payload.get("authors", []),
+                categories=payload.get("categories", []),
+                citation_count=payload.get("citation_count", 0),
             )
             search_results.append(
                 PaperSearchResult(paper=paper, score=result.score)
@@ -282,7 +284,7 @@ def get_vector_store() -> VectorStore:
 if __name__ == "__main__":
     # Quick test
     store = VectorStore()
-    
+
     # Check connection
     info = store.get_collection_info()
     print(f"Collection info: {info}")

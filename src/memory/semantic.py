@@ -137,7 +137,7 @@ class SemanticMemory:
                 logger.warning("Paper not found", arxiv_id=arxiv_id)
                 return None
 
-            payload = points[0].payload
+            payload = points[0].payload or {}
             paper = Paper(
                 arxiv_id=payload["arxiv_id"],
                 title=payload["title"],

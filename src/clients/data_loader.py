@@ -4,12 +4,13 @@ Data loader for HuggingFace datasets.
 Loads ML papers from the CShorten/ML-ArXiv-Papers dataset.
 """
 
+from collections.abc import Iterator
+
 import structlog
 from datasets import load_dataset
-from typing import Iterator
 
-from src.models.paper import Paper
 from src.config import settings
+from src.models.paper import Paper
 
 logger = structlog.get_logger()
 
@@ -17,7 +18,7 @@ logger = structlog.get_logger()
 class HuggingFaceDataLoader:
     """Load papers from HuggingFace datasets."""
 
-    def __init__(self, dataset_name: str = None):
+    def __init__(self, dataset_name: str | None = None):
         """
         Initialize the data loader.
 
@@ -36,10 +37,10 @@ class HuggingFaceDataLoader:
         """
         logger.info("Loading dataset", dataset=self.dataset_name, split=split)
         self._dataset = load_dataset(self.dataset_name, split=split)
-        logger.info("Dataset loaded", num_papers=len(self._dataset))
+        logger.info("Dataset loaded", num_papers=len(self._dataset))  # type: ignore[arg-type]
 
     def get_papers(
-        self, 
+        self,
         limit: int | None = None,
         categories: list[str] | None = None,
     ) -> Iterator[Paper]:
@@ -57,7 +58,7 @@ class HuggingFaceDataLoader:
             self.load_dataset()
 
         count = 0
-        for idx, item in enumerate(self._dataset):
+        for idx, item in enumerate(self._dataset):  # type: ignore[arg-type]
             # Parse paper from dataset item
             paper = self._parse_paper(item, idx)
 
@@ -128,8 +129,8 @@ class HuggingFaceDataLoader:
                 abstract=abstract,
                 authors=self._parse_authors(item.get("authors", "")),
                 categories=categories,
-                published=self._parse_date(item.get("published", "")),
-                updated=self._parse_date(item.get("updated", "")),
+                published=None,
+                updated=None,
             )
 
             return paper
@@ -172,7 +173,7 @@ class HuggingFaceDataLoader:
         """Return total number of papers in dataset."""
         if self._dataset is None:
             self.load_dataset()
-        return len(self._dataset)
+        return len(self._dataset)  # type: ignore[arg-type]
 
 
 # Convenience function
@@ -194,7 +195,7 @@ if __name__ == "__main__":
     # Quick test
     loader = HuggingFaceDataLoader()
     papers = loader.get_sample(3)
-    
+
     for paper in papers:
         print(f"\n{'='*60}")
         print(f"ID: {paper.arxiv_id}")

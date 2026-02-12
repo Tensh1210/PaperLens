@@ -10,7 +10,6 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from src.config import settings
 from src.memory.manager import get_memory_manager
 from src.services.llm import get_llm_service
 
@@ -156,7 +155,7 @@ async def search_papers(request: SearchRequest) -> SearchResponse:
 
     except Exception as e:
         logger.error("Search failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -261,7 +260,7 @@ Be concise but thorough. Use markdown formatting."""
         raise
     except Exception as e:
         logger.error("Comparison failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================
@@ -331,4 +330,4 @@ async def get_related_papers(
         raise
     except Exception as e:
         logger.error("Failed to find related papers", arxiv_id=arxiv_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

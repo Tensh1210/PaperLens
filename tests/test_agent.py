@@ -2,8 +2,6 @@
 Tests for PaperLens agent system.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch
 
 
 class TestToolRegistry:

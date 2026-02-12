@@ -12,7 +12,7 @@ Beliefs have confidence scores that can be reinforced or decayed.
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +122,7 @@ class BeliefMemoryStore:
                     (existing["id"],),
                 )
                 row = await cursor.fetchone()
-                existing_sources = json.loads(row["source_memory_ids"]) if row["source_memory_ids"] else []
+                existing_sources = json.loads(row["source_memory_ids"]) if row and row["source_memory_ids"] else []
                 merged_sources = list(set(existing_sources + belief.source_memory_ids))
 
                 await conn.execute(
@@ -135,19 +135,20 @@ class BeliefMemoryStore:
                         new_confidence,
                         new_count,
                         json.dumps(merged_sources),
-                        datetime.now(timezone.utc).isoformat(),
+                        datetime.now(UTC).isoformat(),
                         existing["id"],
                     ),
                 )
                 await conn.commit()
 
+                existing_id: str = existing["id"]
                 logger.debug(
                     "Reinforced belief",
-                    id=existing["id"],
+                    id=existing_id,
                     type=belief.belief_type.value,
                     confidence=new_confidence,
                 )
-                return existing["id"]
+                return existing_id
             else:
                 # Insert new belief
                 await conn.execute(
@@ -172,13 +173,14 @@ class BeliefMemoryStore:
                 )
                 await conn.commit()
 
+                belief_id: str = belief.id
                 logger.debug(
                     "Stored new belief",
-                    id=belief.id,
+                    id=belief_id,
                     type=belief.belief_type.value,
                     value=belief.value,
                 )
-                return belief.id
+                return belief_id
 
     async def get(self, belief_id: str) -> BeliefMemory | None:
         """
@@ -377,7 +379,7 @@ class BeliefMemoryStore:
                 SET user_confirmed = 1, confidence = MAX(confidence, 0.8), updated_at = ?
                 WHERE id = ?
                 """,
-                (datetime.now(timezone.utc).isoformat(), belief_id),
+                (datetime.now(UTC).isoformat(), belief_id),
             )
             await conn.commit()
 
@@ -399,7 +401,7 @@ class BeliefMemoryStore:
                 SET confidence = confidence * ?, updated_at = ?
                 WHERE user_confirmed = 0 AND confidence > 0.1
                 """,
-                (self.decay_factor, datetime.now(timezone.utc).isoformat()),
+                (self.decay_factor, datetime.now(UTC).isoformat()),
             )
             await conn.commit()
             decayed = cursor.rowcount
@@ -496,7 +498,7 @@ class BeliefMemoryStore:
             # Total beliefs
             cursor = await conn.execute("SELECT COUNT(*) as count FROM beliefs")
             row = await cursor.fetchone()
-            total = row["count"]
+            total = row["count"] if row else 0
 
             # By type
             cursor = await conn.execute(
@@ -508,11 +510,11 @@ class BeliefMemoryStore:
             )
             rows = await cursor.fetchall()
             by_type = {
-                row["belief_type"]: {
-                    "count": row["count"],
-                    "avg_confidence": round(row["avg_confidence"], 3),
+                r["belief_type"]: {
+                    "count": r["count"],
+                    "avg_confidence": round(r["avg_confidence"], 3),
                 }
-                for row in rows
+                for r in rows
             }
 
             # User confirmed
@@ -520,7 +522,7 @@ class BeliefMemoryStore:
                 "SELECT COUNT(*) as count FROM beliefs WHERE user_confirmed = 1"
             )
             row = await cursor.fetchone()
-            confirmed = row["count"]
+            confirmed = row["count"] if row else 0
 
         return {
             "total_beliefs": total,
@@ -574,7 +576,7 @@ class BeliefMemoryStore:
         """Synchronous wrapper for get_preferences_summary."""
         return asyncio.get_event_loop().run_until_complete(self.get_preferences_summary())
 
-    def reinforce_sync(self, belief_type: BeliefType, value: str, **kwargs) -> str:
+    def reinforce_sync(self, belief_type: BeliefType, value: str, **kwargs: Any) -> str:
         """Synchronous wrapper for reinforce."""
         return asyncio.get_event_loop().run_until_complete(
             self.reinforce(belief_type, value, **kwargs)
@@ -595,7 +597,7 @@ def get_belief_store() -> BeliefMemoryStore:
 
 if __name__ == "__main__":
     # Quick test
-    async def test():
+    async def test() -> None:
         store = BeliefMemoryStore("data/test_memory.db")
 
         # Add some beliefs

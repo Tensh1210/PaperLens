@@ -2,8 +2,8 @@
 Tests for PaperLens memory system.
 """
 
+
 import pytest
-from datetime import datetime
 
 
 class TestWorkingMemory:
@@ -22,7 +22,7 @@ class TestWorkingMemory:
 
     def test_add_message(self, working_memory):
         """Test adding messages to session."""
-        session = working_memory.get_session("test-session")
+        working_memory.get_session("test-session")
         working_memory.add_message("test-session", "user", "Hello!")
         working_memory.add_message("test-session", "assistant", "Hi there!")
 

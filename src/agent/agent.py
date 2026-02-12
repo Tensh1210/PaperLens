@@ -18,8 +18,6 @@ from src.agent.prompts import (
     SYSTEM_PROMPT,
     format_conversation_context,
     format_react_prompt,
-    format_search_results,
-    format_paper_details,
 )
 from src.agent.tools import ToolRegistry, ToolResult, get_tool_registry
 from src.config import settings
@@ -142,7 +140,7 @@ class PaperLensAgent:
         """
         # Initialize session
         session_id = session_id or str(uuid4())
-        state = self.memory.get_session(session_id)
+        self.memory.get_session(session_id)
 
         # Clear previous reasoning steps for new query
         self.memory.clear_steps(session_id)
@@ -232,7 +230,7 @@ class PaperLensAgent:
             if parsed["type"] == "final_answer":
                 # Agent is done
                 logger.debug("Agent produced final answer")
-                return parsed["content"]
+                return str(parsed["content"])
 
             elif parsed["type"] == "action":
                 # Execute tool
@@ -483,7 +481,7 @@ class PaperLensAgent:
 
         return basic_context
 
-    def _run_async(self, coro):
+    def _run_async(self, coro: Any) -> Any:
         """Run an async coroutine synchronously."""
         try:
             loop = asyncio.get_event_loop()

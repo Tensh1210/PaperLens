@@ -2,8 +2,7 @@
 Tests for PaperLens API endpoints.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestHealthEndpoint:

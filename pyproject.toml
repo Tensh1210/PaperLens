@@ -84,7 +84,12 @@ select = [
 ignore = [
     "E501",  # line too long (handled by formatter)
     "B008",  # do not perform function calls in argument defaults
+    "B905",  # zip() without strict= parameter
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"]  # imports after sys.path manipulation
+"frontend/*" = ["E402"]  # imports after sys.path manipulation
 
 [tool.ruff.lint.isort]
 known-first-party = ["paperlens"]

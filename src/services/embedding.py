@@ -5,10 +5,11 @@ SPECTER2 is specifically designed for scientific papers and provides
 high-quality embeddings for academic text.
 """
 
+from collections.abc import Sequence
+
+import numpy as np
 import structlog
 from sentence_transformers import SentenceTransformer
-from typing import Sequence
-import numpy as np
 
 from src.config import settings
 from src.models.paper import Paper
@@ -45,7 +46,9 @@ class EmbeddingService:
     @property
     def dimension(self) -> int:
         """Get embedding dimension."""
-        return self.model.get_sentence_embedding_dimension()
+        dim = self.model.get_sentence_embedding_dimension()
+        assert dim is not None
+        return dim
 
     def embed_text(self, text: str) -> list[float]:
         """
@@ -58,11 +61,11 @@ class EmbeddingService:
             Embedding vector as list of floats.
         """
         embedding = self.model.encode(text, convert_to_numpy=True)
-        return embedding.tolist()
+        return list(embedding.tolist())
 
     def embed_texts(
-        self, 
-        texts: Sequence[str], 
+        self,
+        texts: Sequence[str],
         batch_size: int = 32,
         show_progress: bool = True,
     ) -> list[list[float]]:
@@ -78,15 +81,15 @@ class EmbeddingService:
             List of embedding vectors.
         """
         logger.info("Embedding texts", count=len(texts), batch_size=batch_size)
-        
+
         embeddings = self.model.encode(
             list(texts),
             batch_size=batch_size,
             show_progress_bar=show_progress,
             convert_to_numpy=True,
         )
-        
-        return embeddings.tolist()
+
+        return [list(e) for e in embeddings.tolist()]
 
     def embed_paper(self, paper: Paper) -> list[float]:
         """
@@ -150,14 +153,14 @@ class EmbeddingService:
         """
         vec1 = np.array(embedding1)
         vec2 = np.array(embedding2)
-        
+
         dot_product = np.dot(vec1, vec2)
         norm1 = np.linalg.norm(vec1)
         norm2 = np.linalg.norm(vec2)
-        
+
         if norm1 == 0 or norm2 == 0:
             return 0.0
-        
+
         return float(dot_product / (norm1 * norm2))
 
 
@@ -176,19 +179,19 @@ def get_embedding_service() -> EmbeddingService:
 if __name__ == "__main__":
     # Quick test
     service = EmbeddingService()
-    
+
     # Test with sample text
     text = "Attention Is All You Need. We propose a new simple network architecture, the Transformer."
     embedding = service.embed_text(text)
-    
+
     print(f"Model: {service.model_name}")
     print(f"Dimension: {service.dimension}")
     print(f"Embedding shape: {len(embedding)}")
     print(f"First 5 values: {embedding[:5]}")
-    
+
     # Test similarity
     text2 = "The Transformer architecture uses self-attention mechanisms."
     embedding2 = service.embed_text(text2)
-    
+
     similarity = service.similarity(embedding, embedding2)
     print(f"\nSimilarity between texts: {similarity:.4f}")

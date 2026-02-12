@@ -8,6 +8,7 @@ Provides REST API endpoints for:
 - Health checks
 """
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -24,13 +25,13 @@ logger = structlog.get_logger()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
     # Startup
     logger.info("Starting PaperLens API", host=settings.api_host, port=settings.api_port)
 
     # Initialize memory manager
-    memory_manager = get_memory_manager()
+    get_memory_manager()
     logger.info("Memory manager initialized")
 
     yield
@@ -126,7 +127,7 @@ async def get_stats() -> StatsResponse:
         )
     except Exception as e:
         logger.error("Failed to get stats", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================
@@ -170,7 +171,7 @@ async def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
         )
     except Exception as e:
         logger.error("Failed to record feedback", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 class HistoryResponse(BaseModel):
@@ -210,7 +211,7 @@ async def get_history(
         return HistoryResponse(queries=queries, total=len(queries))
     except Exception as e:
         logger.error("Failed to get history", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 class PreferencesResponse(BaseModel):
@@ -233,7 +234,7 @@ async def get_preferences() -> PreferencesResponse:
         return PreferencesResponse(preferences=prefs)
     except Exception as e:
         logger.error("Failed to get preferences", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================
@@ -282,7 +283,7 @@ async def get_paper(arxiv_id: str) -> PaperResponse:
         raise
     except Exception as e:
         logger.error("Failed to get paper", arxiv_id=arxiv_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # =========================================================================

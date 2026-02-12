@@ -18,9 +18,8 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from src.agent.agent import PaperLensAgent, get_agent
+from src.agent.agent import get_agent
 from src.memory.manager import get_memory_manager
-
 
 # =========================================================================
 # Page Configuration

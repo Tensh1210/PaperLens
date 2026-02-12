@@ -5,6 +5,7 @@ Uses pydantic-settings for type-safe configuration from environment variables.
 """
 
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,49 +24,49 @@ class Settings(BaseSettings):
     # =========================================================================
     groq_api_key: str = ""
     openai_api_key: str = ""
-    
+
     # Model selection
     llm_provider: str = "groq"  # groq or openai
     llm_model: str = "llama-3.3-70b-versatile"  # Groq model
-    
+
     # =========================================================================
     # Vector Database (Qdrant)
     # =========================================================================
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "papers"
-    
+
     # =========================================================================
     # Embedding Model
     # =========================================================================
     embedding_model: str = "sentence-transformers/allenai-specter"
     embedding_dimension: int = 768  # SPECTER dimension
-    
+
     # =========================================================================
     # API Configuration
     # =========================================================================
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    
+
     # =========================================================================
     # Search Configuration
     # =========================================================================
     search_top_k: int = 10  # Number of papers to retrieve
     search_min_score: float = 0.5  # Minimum similarity score
     comparison_top_k: int = 5  # Number of papers to compare
-    
+
     # =========================================================================
     # Data Configuration
     # =========================================================================
     dataset_name: str = "CShorten/ML-ArXiv-Papers"
     max_papers_to_index: int | None = None  # None = all papers
-    
+
     # =========================================================================
     # External APIs
     # =========================================================================
     semantic_scholar_api_key: str = ""
     arxiv_rate_limit: float = 3.0  # seconds between requests
-    
+
     # =========================================================================
     # Agent Configuration
     # =========================================================================
@@ -109,7 +110,7 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """
     Get cached settings instance.
-    
+
     Using lru_cache ensures settings are only loaded once.
     """
     return Settings()
