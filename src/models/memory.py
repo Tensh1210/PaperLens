@@ -9,14 +9,14 @@ Defines the data structures for the agentic memory system:
 """
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 
-class MemoryType(str, Enum):
+class MemoryType(StrEnum):
     """Types of memory in the system."""
 
     SEMANTIC = "semantic"
@@ -83,7 +83,7 @@ class EpisodicMemory(MemoryItem):
         self.touch()
 
 
-class BeliefType(str, Enum):
+class BeliefType(StrEnum):
     """Types of user beliefs/preferences."""
 
     FAVORITE_CATEGORY = "favorite_category"
