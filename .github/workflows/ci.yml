@@ -152,6 +152,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: docker/Dockerfile
           push: false
           tags: paperlens:latest
           cache-from: type=gha
