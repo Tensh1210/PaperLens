@@ -230,6 +230,9 @@ class EpisodicMemoryStore:
         Returns:
             List of matching memories.
         """
+        # TODO: Consider using SQLite FTS5 for better full-text search.
+        # Current LIKE-based search is adequate for small datasets but
+        # will degrade with scale. FTS5 would also support ranking.
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             await self._ensure_initialized(conn)
@@ -577,11 +580,19 @@ class EpisodicMemoryStore:
     # Sync wrappers for convenience
     def store_sync(self, memory: EpisodicMemory) -> str:
         """Synchronous wrapper for store."""
-        return asyncio.get_event_loop().run_until_complete(self.store(memory))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self.store(memory))
+        finally:
+            loop.close()
 
     def get_recent_sync(self, **kwargs: Any) -> list[EpisodicMemory]:
         """Synchronous wrapper for get_recent."""
-        return asyncio.get_event_loop().run_until_complete(self.get_recent(**kwargs))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self.get_recent(**kwargs))
+        finally:
+            loop.close()
 
 
 # Singleton instance

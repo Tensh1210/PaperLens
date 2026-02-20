@@ -574,13 +574,21 @@ class BeliefMemoryStore:
     # Sync wrappers for convenience
     def get_preferences_summary_sync(self) -> dict[str, Any]:
         """Synchronous wrapper for get_preferences_summary."""
-        return asyncio.get_event_loop().run_until_complete(self.get_preferences_summary())
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self.get_preferences_summary())
+        finally:
+            loop.close()
 
     def reinforce_sync(self, belief_type: BeliefType, value: str, **kwargs: Any) -> str:
         """Synchronous wrapper for reinforce."""
-        return asyncio.get_event_loop().run_until_complete(
-            self.reinforce(belief_type, value, **kwargs)
-        )
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self.reinforce(belief_type, value, **kwargs)
+            )
+        finally:
+            loop.close()
 
 
 # Singleton instance

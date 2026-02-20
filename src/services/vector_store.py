@@ -18,6 +18,21 @@ from src.models.paper import Paper, PaperSearchResult
 logger = structlog.get_logger()
 
 
+def arxiv_id_to_point_id(arxiv_id: str) -> int:
+    """Convert an ArXiv ID to a deterministic Qdrant point ID.
+
+    Uses MD5 hash truncated to 15 hex chars, then converted to int.
+    This must match the ID used during upsert.
+
+    Args:
+        arxiv_id: ArXiv paper ID (e.g., '2301.12345').
+
+    Returns:
+        Integer point ID for Qdrant.
+    """
+    return int(hashlib.md5(arxiv_id.encode()).hexdigest()[:15], 16)
+
+
 class VectorStore:
     """Vector store for paper embeddings using Qdrant."""
 
@@ -127,7 +142,7 @@ class VectorStore:
         points = []
         for paper, embedding in zip(papers, embeddings):
             # Generate a valid integer ID from arxiv_id using hash
-            point_id = int(hashlib.md5(paper.arxiv_id.encode()).hexdigest()[:15], 16)
+            point_id = arxiv_id_to_point_id(paper.arxiv_id)
             point = models.PointStruct(
                 id=point_id,
                 vector=embedding,

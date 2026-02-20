@@ -6,6 +6,7 @@ The agent reasons about queries, uses tools, and synthesizes responses.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import re
 from typing import Any
@@ -112,6 +113,7 @@ class PaperLensAgent:
         self.memory_manager = memory_manager or get_memory_manager()
         self.planner = planner or get_planner()
         self.max_iterations = max_iterations or settings.agent_max_iterations
+        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
 
         logger.info(
             "Agent initialized",
@@ -195,6 +197,13 @@ class PaperLensAgent:
         # Build context
         context = self._build_context(session_id)
 
+        # Get planner guidance for non-trivial queries
+        plan_guidance = self._get_plan_guidance(query)
+        if plan_guidance:
+            context += f"\n\n## Query Analysis\n{plan_guidance}"
+            plan_lines = [line.strip() for line in plan_guidance.split("\n") if line.strip()]
+            self.memory.set_plan(session_id, plan_lines)
+
         # Get tool schemas
         tool_schemas = self.tools.get_schemas()
 
@@ -262,9 +271,9 @@ class PaperLensAgent:
                 # Add as thought and continue
                 self.memory.add_step(session_id, thought=response, action=None)
 
-        # Max iterations reached
+        # Max iterations reached — return best partial response
         logger.warning("Max iterations reached", session_id=session_id)
-        raise MaxIterationsError(f"Agent exceeded {self.max_iterations} iterations")
+        return self._build_partial_response(session_id)
 
     def _parse_response(self, response: str) -> dict[str, Any]:
         """
@@ -448,6 +457,53 @@ class PaperLensAgent:
             lines.append("")
         return "\n".join(lines)
 
+    def _build_partial_response(self, session_id: str) -> str:
+        """Build the best possible response from partial reasoning steps.
+
+        Called when the agent hits max iterations without producing a FINAL_ANSWER.
+
+        Args:
+            session_id: Session ID.
+
+        Returns:
+            Best partial response string.
+        """
+        steps = self.memory.get_steps(session_id)
+        if not steps:
+            return (
+                "I was unable to complete my analysis within the allowed number of steps. "
+                "Please try rephrasing your question or breaking it into simpler parts."
+            )
+
+        # Gather all observations (tool results) as useful context
+        observations = []
+        last_thought = ""
+        for step in steps:
+            if step.thought:
+                last_thought = step.thought
+            if step.observation and not step.observation.startswith("Error:"):
+                observations.append(step.observation)
+
+        if observations:
+            obs_text = "\n\n".join(observations)
+            return (
+                "I gathered some information but could not fully complete my analysis. "
+                f"Here is what I found:\n\n{obs_text}\n\n"
+                "You may want to refine your query for more specific results."
+            )
+
+        if last_thought:
+            return (
+                "I was still working through the analysis. "
+                f"My last reasoning: {last_thought}\n\n"
+                "Please try a more focused query."
+            )
+
+        return (
+            "I was unable to complete the analysis within the allowed steps. "
+            "Please try a simpler or more specific question."
+        )
+
     def _build_context(self, session_id: str) -> str:
         """Build context string for the agent."""
         state = self.memory.get_session(session_id)
@@ -481,20 +537,51 @@ class PaperLensAgent:
 
         return basic_context
 
+    def _get_plan_guidance(self, query: str) -> str:
+        """Use the query planner to generate guidance for the ReAct loop.
+
+        Args:
+            query: User query.
+
+        Returns:
+            Guidance string to prepend to context, or empty string.
+        """
+        try:
+            plan = self.planner.plan(query, use_llm=False)
+            if plan.intent == "search" and len(plan.steps) == 1:
+                return ""
+
+            guidance_parts = [f"Detected intent: {plan.intent}"]
+
+            for i, step in enumerate(plan.steps):
+                tool_str = f" using {step.tool}" if step.tool else ""
+                guidance_parts.append(f"  Step {i + 1}: {step.task}{tool_str}")
+
+            if plan.requires_comparison:
+                guidance_parts.append("This query requires comparing papers.")
+            if plan.requires_summary:
+                guidance_parts.append("This query requires summarizing a paper.")
+
+            return "\n".join(guidance_parts)
+        except Exception as e:
+            logger.debug("Planner guidance failed", error=str(e))
+            return ""
+
     def _run_async(self, coro: Any) -> Any:
         """Run an async coroutine synchronously."""
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, create a new loop
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, coro)
-                    return future.result()
-            else:
-                return loop.run_until_complete(coro)
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            # No event loop exists, create one
+            loop = None
+
+        if loop is not None and loop.is_running():
+            # We are inside an async context — run in a separate thread
+            if self._executor is None:
+                self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = self._executor.submit(asyncio.run, coro)
+            return future.result(timeout=30)
+        else:
+            # No running loop — safe to use asyncio.run directly
             return asyncio.run(coro)
 
     def chat(

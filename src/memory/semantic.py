@@ -12,7 +12,7 @@ import structlog
 from src.config import settings
 from src.models.paper import Paper, PaperSearchResult
 from src.services.embedding import EmbeddingService, get_embedding_service
-from src.services.vector_store import VectorStore, get_vector_store
+from src.services.vector_store import VectorStore, arxiv_id_to_point_id, get_vector_store
 
 logger = structlog.get_logger()
 
@@ -123,8 +123,8 @@ class SemanticMemory:
         # Search for exact match using the paper's own embedding
         # We use the arxiv_id as the search query since it's stored in payload
         try:
-            # Convert arxiv_id to Qdrant point ID format
-            point_id = arxiv_id.replace(".", "_").replace("/", "_")
+            # Convert arxiv_id to the same integer point ID used during upsert
+            point_id = arxiv_id_to_point_id(arxiv_id)
 
             # Retrieve the point directly
             points = self.vector_store.client.retrieve(

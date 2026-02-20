@@ -39,14 +39,15 @@ class Settings(BaseSettings):
     # =========================================================================
     # Embedding Model
     # =========================================================================
-    embedding_model: str = "sentence-transformers/allenai-specter"
-    embedding_dimension: int = 768  # SPECTER dimension
+    embedding_model: str = "allenai/specter2_base"
+    embedding_dimension: int = 768  # SPECTER2 dimension
 
     # =========================================================================
     # API Configuration
     # =========================================================================
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    cors_origins: list[str] = ["http://localhost:8501", "http://localhost:8000"]
 
     # =========================================================================
     # Search Configuration

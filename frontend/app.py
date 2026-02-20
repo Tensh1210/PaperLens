@@ -8,18 +8,13 @@ Provides an interactive UI for:
 """
 
 import os
-import sys
+from typing import Any
 from uuid import uuid4
 
+import httpx
 import streamlit as st
 
-# Add project root to path for imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from src.agent.agent import get_agent
-from src.memory.manager import get_memory_manager
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 
 # =========================================================================
 # Page Configuration
@@ -51,29 +46,31 @@ if "papers_viewed" not in st.session_state:
 # Helper Functions
 # =========================================================================
 
-@st.cache_resource
-def get_cached_agent():
-    """Get the agent (cached for performance)."""
-    return get_agent()
+def get_api_client() -> httpx.Client:
+    """Get a reusable HTTP client for the PaperLens API."""
+    return httpx.Client(base_url=API_BASE_URL, timeout=120.0)
 
 
-@st.cache_resource
-def get_cached_memory_manager():
-    """Get the memory manager (cached for performance)."""
-    return get_memory_manager()
-
-
-def run_agent_query(query: str, session_id: str):
-    """Run a query through the agent."""
-    agent = get_cached_agent()
+def run_agent_query(query: str, session_id: str) -> dict[str, Any]:
+    """Run a query through the PaperLens API."""
     try:
-        result = agent.run(query, session_id=session_id)
-        return {
-            "success": True,
-            "response": result.response,
-            "papers": result.papers,
-            "steps": len(result.steps),
-        }
+        with get_api_client() as client:
+            response = client.post(
+                "/api/chat",
+                json={"message": query, "session_id": session_id},
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "success": True,
+                "response": data["response"],
+                "papers": data.get("papers", []),
+                "steps": data.get("steps_taken", 0),
+            }
+    except httpx.ConnectError:
+        return {"success": False, "error": "Cannot connect to API. Is the backend running?"}
+    except httpx.HTTPStatusError as e:
+        return {"success": False, "error": f"API error: {e.response.status_code}"}
     except Exception as e:
         return {
             "success": False,
@@ -81,7 +78,7 @@ def run_agent_query(query: str, session_id: str):
         }
 
 
-def format_paper_card(paper: dict) -> str:
+def format_paper_card(paper: dict[str, Any]) -> str:
     """Format a paper as a markdown card."""
     return f"""
 **{paper.get('title', 'Unknown Title')}**
@@ -163,12 +160,21 @@ with st.sidebar:
     # Stats
     st.subheader("Stats")
     try:
-        memory_manager = get_cached_memory_manager()
-        stats = memory_manager.semantic.get_stats()
-        st.metric("Papers indexed", stats.get("total_papers", 0))
-        st.metric("Active sessions", len(memory_manager.working.list_sessions()))
+        with get_api_client() as client:
+            resp = client.get("/health")
+            if resp.status_code == 200:
+                health = resp.json()
+                memory_stats = health.get("memory", {})
+                semantic = memory_stats.get("semantic", {})
+                st.metric("Papers indexed", semantic.get("total_papers", 0))
+                st.metric(
+                    "Active sessions",
+                    memory_stats.get("working_sessions", 0),
+                )
+            else:
+                st.text("Stats unavailable")
     except Exception:
-        st.text("Stats unavailable")
+        st.text("API not reachable")
 
 
 # =========================================================================

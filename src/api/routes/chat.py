@@ -123,10 +123,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest) -> StreamingResponse:
     """
-    Send a message and stream the response.
+    Send a message and receive the response as a Server-Sent Events stream.
 
-    Returns a Server-Sent Events stream with the agent's response.
-    Note: Currently returns the full response as streaming is complex with ReAct.
+    NOTE: This endpoint currently runs the full agent synchronously and then
+    streams the completed response in chunks. It does NOT provide real-time
+    token-by-token streaming. For a non-streaming alternative, use POST /chat.
+
+    True streaming would require refactoring the ReAct loop to support
+    callback-based token delivery, which is planned for a future release.
     """
     try:
         agent = get_agent()

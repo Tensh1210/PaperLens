@@ -5,6 +5,8 @@ Defines the tools available to the ReAct agent for paper search and analysis.
 Each tool has a schema for validation and structured output.
 """
 
+import asyncio
+import concurrent.futures
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -515,17 +517,24 @@ class RecallMemoryTool(Tool):
         **kwargs: Any,
     ) -> ToolResult:
         """Recall memories."""
-        import asyncio
-
         try:
             # Run async method synchronously
-            loop = asyncio.new_event_loop()
             try:
-                memories = loop.run_until_complete(
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(
+                        asyncio.run,
+                        self.episodic.search_by_query(query, limit=limit),
+                    )
+                    memories = future.result(timeout=15)
+            else:
+                memories = asyncio.run(
                     self.episodic.search_by_query(query, limit=limit)
                 )
-            finally:
-                loop.close()
 
             if not memories:
                 return ToolResult(
