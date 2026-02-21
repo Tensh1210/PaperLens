@@ -215,7 +215,7 @@ class TestConfig:
 
             assert settings.qdrant_host == "localhost"
             assert settings.qdrant_port == 6333
-            assert settings.embedding_model == "sentence-transformers/allenai-specter"
+            assert settings.embedding_model == "allenai/specter2_base"
             assert settings.embedding_dimension == 768
 
     def test_qdrant_url_property(self):
