@@ -5,8 +5,6 @@ Defines the tools available to the ReAct agent for paper search and analysis.
 Each tool has a schema for validation and structured output.
 """
 
-import asyncio
-import concurrent.futures
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -16,6 +14,7 @@ from pydantic import BaseModel, Field
 from src.config import settings
 from src.memory.semantic import SemanticMemory, get_semantic_memory
 from src.services.llm import LLMService, get_llm_service
+from src.utils import run_sync
 
 logger = structlog.get_logger()
 
@@ -137,7 +136,7 @@ class SearchPapersTool(Tool):
                     "title": r.paper.title,
                     "year": r.paper.year,
                     "score": round(r.score, 3),
-                    "abstract_preview": r.paper.abstract[:200] + "..." if len(r.paper.abstract) > 200 else r.paper.abstract,
+                    "abstract_preview": r.paper.abstract[:120] + "..." if len(r.paper.abstract) > 120 else r.paper.abstract,
                 })
 
             logger.info("Search executed", query=query[:30], results=len(results))
@@ -332,12 +331,12 @@ class ComparePapersTool(Tool):
             # Default aspects
             aspects = aspects or ["methodology", "contributions", "key_findings"]
 
-            # Build comparison prompt
+            # Build comparison prompt (truncate abstracts to save tokens)
             papers_text = "\n\n".join([
                 f"Paper {i+1}: {p.title}\n"
                 f"ArXiv ID: {p.arxiv_id}\n"
                 f"Year: {p.year}\n"
-                f"Abstract: {p.abstract}"
+                f"Abstract: {p.abstract[:200]}"
                 for i, p in enumerate(papers)
             ])
 
@@ -361,7 +360,7 @@ Be concise but thorough."""
                 {"role": "user", "content": prompt},
             ]
 
-            comparison = self.llm_service.chat_completion(messages, max_tokens=1500)
+            comparison = self.llm_service.chat_completion(messages, max_tokens=800)
 
             logger.info("Comparison generated", paper_count=len(papers))
 
@@ -454,7 +453,7 @@ Include:
                 {"role": "user", "content": prompt},
             ]
 
-            max_tokens = {"brief": 500, "detailed": 1000, "technical": 1200}.get(style, 1000)
+            max_tokens = {"brief": 300, "detailed": 600, "technical": 800}.get(style, 600)
             summary = self.llm_service.chat_completion(messages, max_tokens=max_tokens)
 
             logger.info("Summary generated", arxiv_id=arxiv_id, style=style)
@@ -518,23 +517,10 @@ class RecallMemoryTool(Tool):
     ) -> ToolResult:
         """Recall memories."""
         try:
-            # Run async method synchronously
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop is not None and loop.is_running():
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(
-                        asyncio.run,
-                        self.episodic.search_by_query(query, limit=limit),
-                    )
-                    memories = future.result(timeout=15)
-            else:
-                memories = asyncio.run(
-                    self.episodic.search_by_query(query, limit=limit)
-                )
+            memories = run_sync(
+                self.episodic.search_by_query(query, limit=limit),
+                timeout=15,
+            )
 
             if not memories:
                 return ToolResult(

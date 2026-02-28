@@ -25,13 +25,15 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
-      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - LLM_PROVIDER=${LLM_PROVIDER:-cerebras}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - EMBEDDING_MODEL=sentence-transformers/allenai-specter
+      - EMBEDDING_MODEL=allenai/specter2_base
+      - AGENT_LITE_MODE=${AGENT_LITE_MODE:-true}
       - LOG_LEVEL=INFO
     volumes:
       - ./src:/app/src
@@ -53,9 +55,10 @@ services:
       - "8501:8501"
     environment:
       - API_URL=http://api:8000
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - LLM_PROVIDER=${LLM_PROVIDER:-groq}
-      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b-versatile}
+      - LLM_PROVIDER=${LLM_PROVIDER:-cerebras}
+      - LLM_MODEL=${LLM_MODEL:-llama-3.3-70b}
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
     volumes:

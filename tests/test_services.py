@@ -209,9 +209,9 @@ class TestConfig:
         """Test default settings."""
         from src.config import Settings
 
-        # Create settings with minimal config
-        with patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}):
-            settings = Settings()
+        # Create settings with minimal config (no .env file to avoid overrides)
+        with patch.dict("os.environ", {"GROQ_API_KEY": "test-key"}, clear=False):
+            settings = Settings(_env_file=None)
 
             assert settings.qdrant_host == "localhost"
             assert settings.qdrant_port == 6333
