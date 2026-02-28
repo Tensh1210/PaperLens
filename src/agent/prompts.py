@@ -26,65 +26,28 @@ You have access to a database of ML papers from ArXiv. When users ask about pape
 Always think step by step and use the appropriate tools to gather information before responding."""
 
 
-REACT_PROMPT = """You are a reasoning agent that follows the ReAct (Reasoning + Acting) pattern.
+REACT_PROMPT = """Follow the ReAct pattern to answer the user's query about ML papers.
 
-For each user query, you will:
-1. **THINK**: Analyze what the user wants and plan your approach
-2. **ACT**: Use a tool to gather information
-3. **OBSERVE**: Process the tool's result
-4. **REPEAT** or **RESPOND**: Either continue with more actions or provide a final answer
+Format your response as:
+THOUGHT: <your reasoning>
+ACTION: <tool_name>
+ACTION_INPUT: <json params>
 
-## Output Format
+When ready to answer:
+THOUGHT: <final reasoning>
+FINAL_ANSWER: <your response>
 
-Your response must follow this exact format:
+Rules: One ACTION per turn. ACTION_INPUT must be valid JSON. If a tool errors, try alternatives.
 
-THOUGHT: [Your reasoning about what to do next]
-ACTION: [tool_name]
-ACTION_INPUT: [JSON parameters for the tool]
-
-OR, when you have enough information to answer:
-
-THOUGHT: [Your final reasoning]
-FINAL_ANSWER: [Your response to the user]
-
-## Rules
-
-1. Always start with a THOUGHT
-2. Only use one ACTION per turn
-3. ACTION_INPUT must be valid JSON
-4. Use FINAL_ANSWER only when you have gathered sufficient information
-5. Be concise but thorough in your reasoning
-6. If a tool returns an error, try an alternative approach
-
-## Available Tools
-
+Tools:
 {tools_description}
 
-## Example
-
-User: "Find papers about attention mechanisms in transformers"
-
-THOUGHT: The user wants papers about attention mechanisms in transformers. I should search for papers on this topic.
-ACTION: search_papers
-ACTION_INPUT: {{"query": "attention mechanisms transformers", "limit": 5}}
-
-[After receiving results]
-
-THOUGHT: I found 5 relevant papers. Let me provide a summary to the user.
-FINAL_ANSWER: I found several papers about attention mechanisms in transformers:
-
-1. **Attention Is All You Need** (1706.03762) - The original transformer paper introducing self-attention
-2. ...
-
-## Current Context
-
+Context:
 {context}
 
-## User Query
+Query: {query}
 
-{query}
-
-Begin your response:"""
+Begin:"""
 
 
 TOOL_SELECTION_PROMPT = """Based on the user's request, select the most appropriate tool:
@@ -185,25 +148,19 @@ Use this context to provide more personalized and relevant responses."""
 
 
 def format_tools_description(tools: list[dict]) -> str:
-    """Format tool schemas for the prompt."""
+    """Compact tool descriptions -- one line per tool to save tokens."""
     lines = []
     for tool in tools:
         func = tool.get("function", tool)
         name = func["name"]
         desc = func["description"]
         params = func.get("parameters", {}).get("properties", {})
-
-        param_strs = []
-        for param_name, param_info in params.items():
-            param_type = param_info.get("type", "any")
-            param_desc = param_info.get("description", "")
-            required = param_info.get("required", False)
-            req_str = " (required)" if required else ""
-            param_strs.append(f"    - {param_name} ({param_type}){req_str}: {param_desc}")
-
-        params_text = "\n".join(param_strs) if param_strs else "    (no parameters)"
-        lines.append(f"### {name}\n{desc}\n**Parameters**:\n{params_text}\n")
-
+        required = func.get("parameters", {}).get("required", [])
+        param_parts = []
+        for k in params:
+            suffix = "*" if k in required else ""
+            param_parts.append(f"{k}{suffix}")
+        lines.append(f"- {name}({', '.join(param_parts)}): {desc[:80]}")
     return "\n".join(lines)
 
 
@@ -227,11 +184,11 @@ def format_conversation_context(
     current_query: str | None = None,
 ) -> str:
     """Format conversation context for the agent."""
-    # Format history
+    # Format history (compact: last 3 messages, truncated)
     history_lines = []
-    for msg in history[-10:]:  # Last 10 messages
+    for msg in history[-3:]:
         role = msg.get("role", "unknown").upper()
-        content = msg.get("content", "")[:200]  # Truncate long messages
+        content = msg.get("content", "")[:150]
         history_lines.append(f"{role}: {content}")
     history_text = "\n".join(history_lines) if history_lines else "No previous messages."
 

@@ -21,9 +21,13 @@ sys.path.insert(0, str(project_root))
 def setup_test_env(monkeypatch):
     """Set up test environment variables."""
     monkeypatch.setenv("GROQ_API_KEY", "test-api-key")
+    monkeypatch.setenv("CEREBRAS_API_KEY", "test-cerebras-key")
+    monkeypatch.setenv("LLM_PROVIDER", "cerebras")
+    monkeypatch.setenv("LLM_MODEL", "llama-3.3-70b")
     monkeypatch.setenv("QDRANT_HOST", "localhost")
     monkeypatch.setenv("QDRANT_PORT", "6333")
     monkeypatch.setenv("MEMORY_DB_PATH", "data/test_memory.db")
+    monkeypatch.setenv("AGENT_LITE_MODE", "true")
     monkeypatch.setenv("DEBUG", "true")
 
 

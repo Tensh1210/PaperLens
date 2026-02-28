@@ -24,10 +24,11 @@ class Settings(BaseSettings):
     # =========================================================================
     groq_api_key: str = ""
     openai_api_key: str = ""
+    cerebras_api_key: str = ""
 
-    # Model selection
-    llm_provider: str = "groq"  # groq or openai
-    llm_model: str = "llama-3.3-70b-versatile"  # Groq model
+    # Model selection (cerebras recommended for higher free-tier rate limits)
+    llm_provider: str = "cerebras"  # cerebras, groq, or openai
+    llm_model: str = "llama-3.3-70b"  # Cerebras model name
 
     # =========================================================================
     # Vector Database (Qdrant)
@@ -71,9 +72,10 @@ class Settings(BaseSettings):
     # =========================================================================
     # Agent Configuration
     # =========================================================================
-    agent_max_iterations: int = 5  # Max ReAct loops before stopping
+    agent_max_iterations: int = 3  # Max ReAct loops before stopping
     agent_temperature: float = 0.7  # LLM temperature for reasoning
     agent_timeout: int = 60  # Timeout in seconds for agent execution
+    agent_lite_mode: bool = True  # Skip episodic/belief memory enrichment to save tokens
 
     # =========================================================================
     # Memory Configuration
@@ -102,6 +104,8 @@ class Settings(BaseSettings):
         """Get full model name for LiteLLM."""
         if self.llm_provider == "groq":
             return f"groq/{self.llm_model}"
+        elif self.llm_provider == "cerebras":
+            return f"cerebras/{self.llm_model}"
         elif self.llm_provider == "openai":
             return self.llm_model
         return self.llm_model

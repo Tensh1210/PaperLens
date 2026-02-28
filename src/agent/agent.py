@@ -5,8 +5,6 @@ Implements the ReAct (Reasoning + Acting) pattern for paper search and analysis.
 The agent reasons about queries, uses tools, and synthesizes responses.
 """
 
-import asyncio
-import concurrent.futures
 import json
 import re
 from typing import Any
@@ -26,6 +24,7 @@ from src.memory.manager import MemoryManager, get_memory_manager
 from src.memory.working import WorkingMemory, get_working_memory
 from src.models.memory import AgentStep
 from src.services.llm import LLMService, get_llm_service
+from src.utils import run_sync
 
 logger = structlog.get_logger()
 
@@ -113,7 +112,6 @@ class PaperLensAgent:
         self.memory_manager = memory_manager or get_memory_manager()
         self.planner = planner or get_planner()
         self.max_iterations = max_iterations or settings.agent_max_iterations
-        self._executor: concurrent.futures.ThreadPoolExecutor | None = None
 
         logger.info(
             "Agent initialized",
@@ -386,7 +384,7 @@ class PaperLensAgent:
                 result_count=len(results),
             )
 
-            self._run_async(self.memory_manager.episodic.store(memory))
+            run_sync(self.memory_manager.episodic.store(memory))
             logger.debug("Recorded search to episodic memory", query=query[:30])
         except Exception as e:
             # Don't fail the main operation if memory recording fails
@@ -407,41 +405,40 @@ class PaperLensAgent:
                         self.memory.add_paper(session_id, p["arxiv_id"])
 
     def _format_observation(self, result: ToolResult) -> str:
-        """Format tool result as observation string."""
+        """Format tool result as observation string (compact to save tokens)."""
         if not result.success:
             return f"Error: {result.error}"
 
         data = result.data
 
-        # Format based on data type
         if isinstance(data, str):
-            return data
+            return data[:300]
 
         if isinstance(data, list):
             if not data:
                 return "No results found."
-            # Format as list
             if isinstance(data[0], dict):
                 items = []
-                for i, item in enumerate(data[:10]):  # Limit to 10
+                for i, item in enumerate(data[:5]):  # Reduced from 10
                     if "title" in item:
-                        items.append(f"{i+1}. {item['title']} ({item.get('arxiv_id', 'N/A')})")
+                        items.append(
+                            f"{i+1}. {item['title'][:60]} ({item.get('arxiv_id', '?')})"
+                        )
                     else:
-                        items.append(f"{i+1}. {str(item)[:100]}")
+                        items.append(f"{i+1}. {str(item)[:60]}")
                 return f"Found {len(data)} results:\n" + "\n".join(items)
             return f"Found {len(data)} items."
 
         if isinstance(data, dict):
-            # Check for specific response types
             if "comparison" in data:
-                return f"Comparison generated:\n{data['comparison'][:500]}..."
+                return f"Comparison:\n{data['comparison'][:300]}"
             if "summary" in data:
-                return f"Summary:\n{data['summary'][:500]}..."
+                return f"Summary:\n{data['summary'][:300]}"
             if "title" in data:
-                return f"Paper: {data['title']} ({data.get('arxiv_id', 'N/A')})"
-            return json.dumps(data, indent=2)[:500]
+                return f"Paper: {data['title'][:60]} ({data.get('arxiv_id', '?')})"
+            return json.dumps(data, indent=2)[:300]
 
-        return str(data)[:500]
+        return str(data)[:300]
 
     def _format_steps_for_prompt(self, steps: list[AgentStep]) -> str:
         """Format reasoning steps for inclusion in prompt."""
@@ -508,19 +505,26 @@ class PaperLensAgent:
         """Build context string for the agent."""
         state = self.memory.get_session(session_id)
 
-        # Get conversation history (formatted)
-        history = [{"role": m.role, "content": m.content} for m in state.messages[-5:]]
+        # Compact: last 2 messages, truncated content
+        history = [
+            {"role": m.role, "content": m.content[:150]}
+            for m in state.messages[-2:]
+        ]
 
-        # Basic context from working memory
+        # Basic context from working memory (limit paper IDs)
         basic_context = format_conversation_context(
             history=history,
-            papers=state.retrieved_paper_ids,
+            papers=state.retrieved_paper_ids[-5:],
             current_query=state.current_query,
         )
 
+        # Skip rich context in lite mode to save tokens
+        if settings.agent_lite_mode:
+            return basic_context
+
         # Try to add rich context from memory manager (beliefs, episodic)
         try:
-            rich_context = self._run_async(
+            rich_context = run_sync(
                 self.memory_manager.build_context(
                     session_id=session_id,
                     query=state.current_query,
@@ -566,23 +570,6 @@ class PaperLensAgent:
         except Exception as e:
             logger.debug("Planner guidance failed", error=str(e))
             return ""
-
-    def _run_async(self, coro: Any) -> Any:
-        """Run an async coroutine synchronously."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is not None and loop.is_running():
-            # We are inside an async context — run in a separate thread
-            if self._executor is None:
-                self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            future = self._executor.submit(asyncio.run, coro)
-            return future.result(timeout=30)
-        else:
-            # No running loop — safe to use asyncio.run directly
-            return asyncio.run(coro)
 
     def chat(
         self,
