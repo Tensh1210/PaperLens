@@ -10,6 +10,8 @@ Decomposes complex user queries into structured plans:
 
 import json
 import re
+from datetime import datetime
+from functools import lru_cache
 from typing import Any
 
 import structlog
@@ -231,13 +233,12 @@ class QueryPlanner:
         match = re.search(r'\b(in\s+)?(\d{4})(\s+papers?)?\b', query)
         if match and not filters:
             year = int(match.group(2))
-            if 2000 <= year <= 2030:
+            if 2000 <= year <= datetime.now().year + 1:
                 filters["year_from"] = year
                 filters["year_to"] = year
 
         # "recent", "latest"
         if re.search(r'\b(recent|latest|new)\b', query):
-            from datetime import datetime
             filters["year_from"] = datetime.now().year - 1
 
         return filters if filters else None
@@ -523,16 +524,11 @@ class QueryPlanner:
         return "\n".join(lines)
 
 
-# Singleton instance
-_planner: QueryPlanner | None = None
 
-
+@lru_cache(maxsize=1)
 def get_planner() -> QueryPlanner:
     """Get or create the query planner singleton."""
-    global _planner
-    if _planner is None:
-        _planner = QueryPlanner()
-    return _planner
+    return QueryPlanner()
 
 
 if __name__ == "__main__":

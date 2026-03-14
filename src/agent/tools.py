@@ -6,6 +6,7 @@ Each tool has a schema for validation and structured output.
 """
 
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from typing import Any
 
 import structlog
@@ -73,7 +74,7 @@ class SearchPapersTool(Tool):
     description = (
         "Search for academic papers using natural language. "
         "Returns papers ranked by semantic similarity to the query. "
-        "Use filters to narrow results by year or category."
+        "Do NOT use year or category filters unless the user explicitly asks for them."
     )
     parameters = {
         "query": {
@@ -88,18 +89,12 @@ class SearchPapersTool(Tool):
         },
         "year_from": {
             "type": "integer",
-            "description": "Filter papers published from this year onwards",
+            "description": "Only use if user asks for a specific time range",
             "required": False,
         },
         "year_to": {
             "type": "integer",
-            "description": "Filter papers published up to this year",
-            "required": False,
-        },
-        "categories": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "ArXiv categories to filter by (e.g., ['cs.CL', 'cs.LG'])",
+            "description": "Only use if user asks for a specific time range",
             "required": False,
         },
     }
@@ -113,7 +108,6 @@ class SearchPapersTool(Tool):
         limit: int | None = None,
         year_from: int | None = None,
         year_to: int | None = None,
-        categories: list[str] | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """Execute paper search."""
@@ -125,7 +119,6 @@ class SearchPapersTool(Tool):
                 limit=limit,
                 year_from=year_from,
                 year_to=year_to,
-                categories=categories,
             )
 
             # Format results for agent
@@ -579,6 +572,17 @@ class ToolRegistry:
         tool = self.get(name)
         if not tool:
             return ToolResult(success=False, error=f"Unknown tool: {name}")
+
+        # Validate required parameters
+        schema = tool.parameters
+        required = [k for k, v in schema.items() if v.get("required", False)]
+        missing = [p for p in required if p not in kwargs]
+        if missing:
+            return ToolResult(
+                success=False,
+                error=f"Missing required parameters: {', '.join(missing)}",
+            )
+
         return tool.execute(**kwargs)
 
 
@@ -599,16 +603,11 @@ def create_default_registry() -> ToolRegistry:
     return registry
 
 
-# Singleton registry
-_tool_registry: ToolRegistry | None = None
 
-
+@lru_cache(maxsize=1)
 def get_tool_registry() -> ToolRegistry:
     """Get or create the tool registry singleton."""
-    global _tool_registry
-    if _tool_registry is None:
-        _tool_registry = create_default_registry()
-    return _tool_registry
+    return create_default_registry()
 
 
 if __name__ == "__main__":
