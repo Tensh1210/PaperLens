@@ -4,8 +4,10 @@ Configuration management for PaperLens.
 Uses pydantic-settings for type-safe configuration from environment variables.
 """
 
+import warnings
 from functools import lru_cache
 
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,13 +24,13 @@ class Settings(BaseSettings):
     # =========================================================================
     # LLM Configuration
     # =========================================================================
-    groq_api_key: str = ""
-    openai_api_key: str = ""
-    cerebras_api_key: str = ""
+    groq_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    cerebras_api_key: SecretStr = SecretStr("")
 
     # Model selection (cerebras recommended for higher free-tier rate limits)
     llm_provider: str = "cerebras"  # cerebras, groq, or openai
-    llm_model: str = "llama-3.3-70b"  # Cerebras model name
+    llm_model: str = "llama3.1-8b"  # Cerebras model name
 
     # =========================================================================
     # Vector Database (Qdrant)
@@ -66,7 +68,7 @@ class Settings(BaseSettings):
     # =========================================================================
     # External APIs
     # =========================================================================
-    semantic_scholar_api_key: str = ""
+    semantic_scholar_api_key: SecretStr = SecretStr("")
     arxiv_rate_limit: float = 3.0  # seconds between requests
 
     # =========================================================================
@@ -94,6 +96,16 @@ class Settings(BaseSettings):
     # =========================================================================
     # Computed Properties
     # =========================================================================
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, v: list[str]) -> list[str]:
+        if "*" in v:
+            warnings.warn(
+                "Wildcard '*' in CORS origins is insecure for production",
+                stacklevel=2,
+            )
+        return v
+
     @property
     def qdrant_url(self) -> str:
         """Get Qdrant connection URL."""

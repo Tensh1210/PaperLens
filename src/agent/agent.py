@@ -7,6 +7,7 @@ The agent reasons about queries, uses tools, and synthesizes responses.
 
 import json
 import re
+from functools import lru_cache
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +28,11 @@ from src.services.llm import LLMService, get_llm_service
 from src.utils import run_sync
 
 logger = structlog.get_logger()
+
+# Truncation constants for observations
+MAX_OBSERVATION_CHARS = 300
+MAX_OBSERVATION_ITEMS = 5
+MAX_TITLE_CHARS = 60
 
 
 class AgentError(Exception):
@@ -205,6 +211,8 @@ class PaperLensAgent:
         # Get tool schemas
         tool_schemas = self.tools.get_schemas()
 
+        consecutive_parse_failures = 0
+
         for iteration in range(self.max_iterations):
             logger.debug(f"ReAct iteration {iteration + 1}")
 
@@ -236,10 +244,14 @@ class PaperLensAgent:
 
             if parsed["type"] == "final_answer":
                 # Agent is done
+                consecutive_parse_failures = 0
                 logger.debug("Agent produced final answer")
                 return str(parsed["content"])
 
             elif parsed["type"] == "action":
+                # Reset parse failure counter on success
+                consecutive_parse_failures = 0
+
                 # Execute tool
                 thought = parsed["thought"]
                 action = parsed["action"]
@@ -265,13 +277,42 @@ class PaperLensAgent:
 
             else:
                 # Couldn't parse - try to recover
-                logger.warning("Failed to parse response", response=response[:100])
+                consecutive_parse_failures += 1
+                logger.warning(
+                    "Failed to parse response",
+                    response=response[:100],
+                    consecutive_failures=consecutive_parse_failures,
+                )
+
+                if consecutive_parse_failures >= 2:
+                    logger.warning("Multiple parse failures, forcing partial response")
+                    return self._build_partial_response(session_id)
+
                 # Add as thought and continue
                 self.memory.add_step(session_id, thought=response, action=None)
 
         # Max iterations reached — return best partial response
         logger.warning("Max iterations reached", session_id=session_id)
         return self._build_partial_response(session_id)
+
+    def _extract_json(self, text: str) -> dict[str, Any] | None:
+        """Extract first valid JSON object from text using bracket counting."""
+        depth = 0
+        start = -1
+        for i, char in enumerate(text):
+            if char == '{':
+                if depth == 0:
+                    start = i
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    try:
+                        result: dict[str, Any] = json.loads(text[start:i + 1])
+                        return result
+                    except json.JSONDecodeError:
+                        start = -1  # Reset and continue looking
+        return None
 
     def _parse_response(self, response: str) -> dict[str, Any]:
         """
@@ -312,14 +353,15 @@ class PaperLensAgent:
                 return {"type": "unknown", "content": response}
             action = action_match.group(1)
 
-            # Extract action input
-            action_input = {}
-            input_match = re.search(r"ACTION_INPUT:\s*(\{.+?\})", response, re.DOTALL)
-            if input_match:
-                try:
-                    action_input = json.loads(input_match.group(1))
-                except json.JSONDecodeError:
-                    logger.warning("Failed to parse action input", input=input_match.group(1))
+            # Extract action input using bracket-depth JSON extraction
+            action_input: dict[str, Any] = {}
+            input_marker = re.search(r"ACTION_INPUT:\s*", response)
+            if input_marker:
+                extracted = self._extract_json(response[input_marker.end():])
+                if extracted is not None:
+                    action_input = extracted
+                else:
+                    logger.warning("Failed to parse action input from response")
 
             return {
                 "type": "action",
@@ -412,33 +454,33 @@ class PaperLensAgent:
         data = result.data
 
         if isinstance(data, str):
-            return data[:300]
+            return data[:MAX_OBSERVATION_CHARS]
 
         if isinstance(data, list):
             if not data:
                 return "No results found."
             if isinstance(data[0], dict):
                 items = []
-                for i, item in enumerate(data[:5]):  # Reduced from 10
+                for i, item in enumerate(data[:MAX_OBSERVATION_ITEMS]):
                     if "title" in item:
                         items.append(
-                            f"{i+1}. {item['title'][:60]} ({item.get('arxiv_id', '?')})"
+                            f"{i+1}. {item['title'][:MAX_TITLE_CHARS]} ({item.get('arxiv_id', '?')})"
                         )
                     else:
-                        items.append(f"{i+1}. {str(item)[:60]}")
+                        items.append(f"{i+1}. {str(item)[:MAX_TITLE_CHARS]}")
                 return f"Found {len(data)} results:\n" + "\n".join(items)
             return f"Found {len(data)} items."
 
         if isinstance(data, dict):
             if "comparison" in data:
-                return f"Comparison:\n{data['comparison'][:300]}"
+                return f"Comparison:\n{data['comparison'][:MAX_OBSERVATION_CHARS]}"
             if "summary" in data:
-                return f"Summary:\n{data['summary'][:300]}"
+                return f"Summary:\n{data['summary'][:MAX_OBSERVATION_CHARS]}"
             if "title" in data:
-                return f"Paper: {data['title'][:60]} ({data.get('arxiv_id', '?')})"
-            return json.dumps(data, indent=2)[:300]
+                return f"Paper: {data['title'][:MAX_TITLE_CHARS]} ({data.get('arxiv_id', '?')})"
+            return json.dumps(data, indent=2)[:MAX_OBSERVATION_CHARS]
 
-        return str(data)[:300]
+        return str(data)[:MAX_OBSERVATION_CHARS]
 
     def _format_steps_for_prompt(self, steps: list[AgentStep]) -> str:
         """Format reasoning steps for inclusion in prompt."""
@@ -607,16 +649,10 @@ class PaperLensAgent:
         self.memory.clear_session(session_id)
 
 
-# Singleton instance
-_agent: PaperLensAgent | None = None
-
-
+@lru_cache(maxsize=1)
 def get_agent() -> PaperLensAgent:
     """Get or create the agent singleton."""
-    global _agent
-    if _agent is None:
-        _agent = PaperLensAgent()
-    return _agent
+    return PaperLensAgent()
 
 
 if __name__ == "__main__":

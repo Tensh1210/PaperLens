@@ -10,11 +10,12 @@ import json
 import os
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import structlog
 from litellm import acompletion, completion
-from litellm.exceptions import RateLimitError
+from litellm.exceptions import NotFoundError, RateLimitError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -51,7 +52,7 @@ class ProviderConfig:
 
 # Provider chain ordered by preference (higher rate limits first)
 PROVIDER_CHAIN = [
-    ProviderConfig("cerebras", "cerebras/llama-3.3-70b", "CEREBRAS_API_KEY", 60000),
+    ProviderConfig("cerebras", "cerebras/llama3.1-8b", "CEREBRAS_API_KEY", 60000),
     ProviderConfig("groq", "groq/llama-3.3-70b-versatile", "GROQ_API_KEY", 12000),
 ]
 
@@ -103,18 +104,18 @@ class LLMService:
     def _get_provider_key(provider_name: str) -> str:
         """Get the API key for a provider from settings."""
         key_map = {
-            "cerebras": settings.cerebras_api_key,
-            "groq": settings.groq_api_key,
-            "openai": settings.openai_api_key,
+            "cerebras": settings.cerebras_api_key.get_secret_value(),
+            "groq": settings.groq_api_key.get_secret_value(),
+            "openai": settings.openai_api_key.get_secret_value(),
         }
         return key_map.get(provider_name, "")
 
     def _setup_env(self, api_key: str | None = None) -> None:
-        """Set API key env vars for litellm."""
+        """Set API key env vars for litellm (only if not already set)."""
         key_map = {
-            "GROQ_API_KEY": settings.groq_api_key,
-            "CEREBRAS_API_KEY": settings.cerebras_api_key,
-            "OPENAI_API_KEY": settings.openai_api_key,
+            "GROQ_API_KEY": settings.groq_api_key.get_secret_value(),
+            "CEREBRAS_API_KEY": settings.cerebras_api_key.get_secret_value(),
+            "OPENAI_API_KEY": settings.openai_api_key.get_secret_value(),
         }
         # Backward compat: if explicit api_key passed, treat as primary provider key
         if api_key:
@@ -125,7 +126,7 @@ class LLMService:
             elif settings.llm_provider == "openai":
                 key_map["OPENAI_API_KEY"] = api_key
         for env_var, value in key_map.items():
-            if value:
+            if value and env_var not in os.environ:
                 os.environ[env_var] = value
 
     def _call_with_fallback(
@@ -163,8 +164,8 @@ class LLMService:
                     output_length=len(content) if content else 0,
                 )
                 return content or ""
-            except RateLimitError as e:
-                logger.warning("Rate limit hit, trying next provider", model=model)
+            except (RateLimitError, NotFoundError) as e:
+                logger.warning("Provider error, trying next", model=model, error=str(e))
                 errors.append((model, str(e)))
                 continue
             except Exception as e:
@@ -274,6 +275,12 @@ class LLMService:
 
         raise LLMRateLimitError(f"All providers rate limited: {errors}")
 
+    @retry(
+        retry=retry_if_exception_type((ConnectionError, TimeoutError)),
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=2, min=3, max=15),
+        reraise=True,
+    )
     def chat_completion_stream(
         self,
         messages: list[dict[str, str]],
@@ -483,16 +490,10 @@ class LLMService:
             raise LLMError(f"Tool completion failed: {e}") from e
 
 
-# Singleton instance
-_llm_service: LLMService | None = None
-
-
+@lru_cache(maxsize=1)
 def get_llm_service() -> LLMService:
     """Get or create the LLM service singleton."""
-    global _llm_service
-    if _llm_service is None:
-        _llm_service = LLMService()
-    return _llm_service
+    return LLMService()
 
 
 if __name__ == "__main__":
