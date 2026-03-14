@@ -12,6 +12,7 @@ Enables queries like "Show me papers like the one I searched for last week".
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -580,31 +581,18 @@ class EpisodicMemoryStore:
     # Sync wrappers for convenience
     def store_sync(self, memory: EpisodicMemory) -> str:
         """Synchronous wrapper for store."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self.store(memory))
-        finally:
-            loop.close()
+        return asyncio.run(self.store(memory))
 
     def get_recent_sync(self, **kwargs: Any) -> list[EpisodicMemory]:
         """Synchronous wrapper for get_recent."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self.get_recent(**kwargs))
-        finally:
-            loop.close()
+        return asyncio.run(self.get_recent(**kwargs))
 
 
-# Singleton instance
-_episodic_store: EpisodicMemoryStore | None = None
 
-
+@lru_cache(maxsize=1)
 def get_episodic_store() -> EpisodicMemoryStore:
     """Get or create the episodic memory store singleton."""
-    global _episodic_store
-    if _episodic_store is None:
-        _episodic_store = EpisodicMemoryStore()
-    return _episodic_store
+    return EpisodicMemoryStore()
 
 
 if __name__ == "__main__":

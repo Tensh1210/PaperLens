@@ -173,6 +173,7 @@ class WorkingMemoryState(MemoryItem):
 
     # Session
     session_id: str = Field(default_factory=lambda: str(uuid4()), description="Current session ID")
+    last_accessed: datetime = Field(default_factory=lambda: datetime.now(UTC), description="Last access timestamp")
 
     # Conversation
     messages: list[ConversationMessage] = Field(default_factory=list, description="Conversation history")

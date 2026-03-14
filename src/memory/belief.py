@@ -13,6 +13,7 @@ Beliefs have confidence scores that can be reinforced or decayed.
 import asyncio
 import json
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,7 @@ class BeliefMemoryStore:
         Store or update a belief.
 
         If a belief with the same type and value exists, it will be reinforced.
+        Uses BEGIN IMMEDIATE to prevent TOCTOU race conditions.
 
         Args:
             belief: BeliefMemory to store.
@@ -101,86 +103,88 @@ class BeliefMemoryStore:
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             await self._ensure_initialized(conn)
-            # Check if belief already exists
-            cursor = await conn.execute(
-                "SELECT id, confidence, reinforcement_count FROM beliefs WHERE belief_type = ? AND value = ?",
-                (belief.belief_type.value, belief.value),
-            )
-            existing = await cursor.fetchone()
 
-            if existing:
-                # Reinforce existing belief
-                new_confidence = min(
-                    1.0,
-                    existing["confidence"] + 0.1 * (1 - existing["confidence"])
-                )
-                new_count = existing["reinforcement_count"] + 1
-
-                # Merge source memory IDs
+            # Use immediate transaction to prevent race conditions
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Check if belief already exists
                 cursor = await conn.execute(
-                    "SELECT source_memory_ids FROM beliefs WHERE id = ?",
-                    (existing["id"],),
+                    "SELECT id, confidence, reinforcement_count, source_memory_ids FROM beliefs WHERE belief_type = ? AND value = ?",
+                    (belief.belief_type.value, belief.value),
                 )
-                row = await cursor.fetchone()
-                existing_sources = json.loads(row["source_memory_ids"]) if row and row["source_memory_ids"] else []
-                merged_sources = list(set(existing_sources + belief.source_memory_ids))
+                existing = await cursor.fetchone()
 
-                await conn.execute(
-                    """
-                    UPDATE beliefs
-                    SET confidence = ?, reinforcement_count = ?, source_memory_ids = ?, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        new_confidence,
-                        new_count,
-                        json.dumps(merged_sources),
-                        datetime.now(UTC).isoformat(),
-                        existing["id"],
-                    ),
-                )
-                await conn.commit()
+                if existing:
+                    # Reinforce existing belief
+                    new_confidence = min(
+                        1.0,
+                        existing["confidence"] + 0.1 * (1 - existing["confidence"])
+                    )
+                    new_count = existing["reinforcement_count"] + 1
 
-                existing_id: str = existing["id"]
-                logger.debug(
-                    "Reinforced belief",
-                    id=existing_id,
-                    type=belief.belief_type.value,
-                    confidence=new_confidence,
-                )
-                return existing_id
-            else:
-                # Insert new belief
-                await conn.execute(
-                    """
-                    INSERT INTO beliefs (
-                        id, created_at, updated_at, belief_type, value, confidence,
-                        reinforcement_count, source_memory_ids, user_confirmed, metadata
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        belief.id,
-                        belief.created_at.isoformat(),
-                        belief.updated_at.isoformat(),
-                        belief.belief_type.value,
-                        belief.value,
-                        belief.confidence,
-                        belief.reinforcement_count,
-                        json.dumps(belief.source_memory_ids),
-                        1 if belief.user_confirmed else 0,
-                        json.dumps({}),
-                    ),
-                )
-                await conn.commit()
+                    # Merge source memory IDs
+                    existing_sources = json.loads(existing["source_memory_ids"]) if existing["source_memory_ids"] else []
+                    merged_sources = list(set(existing_sources + belief.source_memory_ids))
 
-                belief_id: str = belief.id
-                logger.debug(
-                    "Stored new belief",
-                    id=belief_id,
-                    type=belief.belief_type.value,
-                    value=belief.value,
-                )
-                return belief_id
+                    await conn.execute(
+                        """
+                        UPDATE beliefs
+                        SET confidence = ?, reinforcement_count = ?, source_memory_ids = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            new_confidence,
+                            new_count,
+                            json.dumps(merged_sources),
+                            datetime.now(UTC).isoformat(),
+                            existing["id"],
+                        ),
+                    )
+                    await conn.commit()
+
+                    existing_id: str = existing["id"]
+                    logger.debug(
+                        "Reinforced belief",
+                        id=existing_id,
+                        type=belief.belief_type.value,
+                        confidence=new_confidence,
+                    )
+                    return existing_id
+                else:
+                    # Insert new belief
+                    await conn.execute(
+                        """
+                        INSERT INTO beliefs (
+                            id, created_at, updated_at, belief_type, value, confidence,
+                            reinforcement_count, source_memory_ids, user_confirmed, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            belief.id,
+                            belief.created_at.isoformat(),
+                            belief.updated_at.isoformat(),
+                            belief.belief_type.value,
+                            belief.value,
+                            belief.confidence,
+                            belief.reinforcement_count,
+                            json.dumps(belief.source_memory_ids),
+                            1 if belief.user_confirmed else 0,
+                            json.dumps({}),
+                        ),
+                    )
+                    await conn.commit()
+
+                    belief_id: str = belief.id
+                    logger.debug(
+                        "Stored new belief",
+                        id=belief_id,
+                        type=belief.belief_type.value,
+                        value=belief.value,
+                    )
+                    return belief_id
+            except Exception:
+                await conn.rollback()
+                raise
 
     async def get(self, belief_id: str) -> BeliefMemory | None:
         """
@@ -574,33 +578,18 @@ class BeliefMemoryStore:
     # Sync wrappers for convenience
     def get_preferences_summary_sync(self) -> dict[str, Any]:
         """Synchronous wrapper for get_preferences_summary."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(self.get_preferences_summary())
-        finally:
-            loop.close()
+        return asyncio.run(self.get_preferences_summary())
 
     def reinforce_sync(self, belief_type: BeliefType, value: str, **kwargs: Any) -> str:
         """Synchronous wrapper for reinforce."""
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                self.reinforce(belief_type, value, **kwargs)
-            )
-        finally:
-            loop.close()
+        return asyncio.run(self.reinforce(belief_type, value, **kwargs))
 
 
-# Singleton instance
-_belief_store: BeliefMemoryStore | None = None
 
-
+@lru_cache(maxsize=1)
 def get_belief_store() -> BeliefMemoryStore:
     """Get or create the belief memory store singleton."""
-    global _belief_store
-    if _belief_store is None:
-        _belief_store = BeliefMemoryStore()
-    return _belief_store
+    return BeliefMemoryStore()
 
 
 if __name__ == "__main__":

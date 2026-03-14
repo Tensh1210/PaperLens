@@ -10,6 +10,8 @@ Maintains current session state including:
 Cleared when session ends.
 """
 
+from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any
 from uuid import uuid4
 
@@ -17,6 +19,8 @@ import structlog
 
 from src.config import settings
 from src.models.memory import AgentStep, ConversationMessage, WorkingMemoryState
+
+SESSION_EXPIRY_SECONDS = 86400  # 24 hours
 
 logger = structlog.get_logger()
 
@@ -51,12 +55,25 @@ class WorkingMemory:
         Returns:
             Working memory state for the session.
         """
+        # Cleanup expired sessions
+        now = datetime.now(UTC)
+        expired = [
+            sid for sid, state in self._sessions.items()
+            if (now - state.last_accessed).total_seconds() > SESSION_EXPIRY_SECONDS
+        ]
+        for sid in expired:
+            del self._sessions[sid]
+            logger.debug("Expired session cleaned up", session_id=sid)
+
         if session_id is None:
             session_id = str(uuid4())
 
         if session_id not in self._sessions:
             self._sessions[session_id] = WorkingMemoryState(session_id=session_id)
             logger.debug("Created new session", session_id=session_id)
+        else:
+            # Update last_accessed on existing session
+            self._sessions[session_id].last_accessed = now
 
         return self._sessions[session_id]
 
@@ -388,16 +405,11 @@ class WorkingMemory:
         return session_id in self._sessions
 
 
-# Singleton instance
-_working_memory: WorkingMemory | None = None
 
-
+@lru_cache(maxsize=1)
 def get_working_memory() -> WorkingMemory:
     """Get or create the working memory singleton."""
-    global _working_memory
-    if _working_memory is None:
-        _working_memory = WorkingMemory()
-    return _working_memory
+    return WorkingMemory()
 
 
 if __name__ == "__main__":
