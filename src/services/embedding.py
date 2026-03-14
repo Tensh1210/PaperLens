@@ -6,6 +6,7 @@ high-quality embeddings for academic text.
 """
 
 from collections.abc import Sequence
+from functools import lru_cache
 
 import numpy as np
 import structlog
@@ -164,16 +165,10 @@ class EmbeddingService:
         return float(dot_product / (norm1 * norm2))
 
 
-# Singleton instance
-_embedding_service: EmbeddingService | None = None
-
-
+@lru_cache(maxsize=1)
 def get_embedding_service() -> EmbeddingService:
     """Get or create the embedding service singleton."""
-    global _embedding_service
-    if _embedding_service is None:
-        _embedding_service = EmbeddingService()
-    return _embedding_service
+    return EmbeddingService()
 
 
 if __name__ == "__main__":

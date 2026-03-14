@@ -12,6 +12,7 @@ Handles memory consolidation and context building for the agent.
 
 import asyncio
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import Any
 
 import structlog
@@ -594,16 +595,11 @@ class MemoryManager:
         return stats
 
 
-# Singleton instance
-_memory_manager: MemoryManager | None = None
 
-
+@lru_cache(maxsize=1)
 def get_memory_manager() -> MemoryManager:
     """Get or create the memory manager singleton."""
-    global _memory_manager
-    if _memory_manager is None:
-        _memory_manager = MemoryManager()
-    return _memory_manager
+    return MemoryManager()
 
 
 if __name__ == "__main__":

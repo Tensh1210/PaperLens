@@ -6,6 +6,7 @@ Handles storage and retrieval of paper embeddings.
 
 import hashlib
 from collections.abc import Sequence
+from functools import lru_cache
 
 import structlog
 from qdrant_client import QdrantClient
@@ -284,16 +285,10 @@ class VectorStore:
             return 0
 
 
-# Singleton instance
-_vector_store: VectorStore | None = None
-
-
+@lru_cache(maxsize=1)
 def get_vector_store() -> VectorStore:
     """Get or create the vector store singleton."""
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = VectorStore()
-    return _vector_store
+    return VectorStore()
 
 
 if __name__ == "__main__":
