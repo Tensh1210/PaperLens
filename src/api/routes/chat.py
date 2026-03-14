@@ -4,6 +4,7 @@ Chat routes for PaperLens API.
 Provides the main agentic chat interface for interacting with the paper search engine.
 """
 
+import json as json_module
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
@@ -114,10 +115,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     except AgentError as e:
         logger.error("Agent error", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Agent error: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Agent processing error") from e
     except Exception as e:
         logger.error("Chat failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/chat/stream")
@@ -142,12 +143,13 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 # True streaming would require restructuring the ReAct loop
                 result = agent.run(request.message, session_id=session_id)
 
-                # Send metadata first
-                yield "data: {\n"
-                yield f'data:   "session_id": "{result.session_id}",\n'
-                yield f'data:   "papers": {result.papers},\n'
-                yield f'data:   "steps": {len(result.steps)}\n'
-                yield "data: }\n\n"
+                # Send metadata first as valid single-line JSON
+                metadata = json_module.dumps({
+                    "session_id": result.session_id,
+                    "papers": result.papers,
+                    "steps": len(result.steps),
+                })
+                yield f"data: {metadata}\n\n"
 
                 # Send response in chunks to simulate streaming
                 chunk_size = 50
@@ -172,7 +174,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
     except Exception as e:
         logger.error("Stream chat failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
@@ -206,7 +208,7 @@ async def get_session_info(session_id: str) -> SessionInfo:
         raise
     except Exception as e:
         logger.error("Failed to get session info", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/chat/session/{session_id}/history", response_model=ConversationResponse)
@@ -240,7 +242,7 @@ async def get_conversation_history(session_id: str) -> ConversationResponse:
         raise
     except Exception as e:
         logger.error("Failed to get history", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.delete("/chat/session/{session_id}")
@@ -266,7 +268,7 @@ async def clear_session(session_id: str) -> dict[str, str]:
         raise
     except Exception as e:
         logger.error("Failed to clear session", session_id=session_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.post("/chat/session")
@@ -289,7 +291,7 @@ async def create_session() -> dict[str, str]:
 
     except Exception as e:
         logger.error("Failed to create session", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
@@ -327,4 +329,4 @@ async def get_available_tools() -> ToolsResponse:
 
     except Exception as e:
         logger.error("Failed to get tools", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e

@@ -4,11 +4,12 @@ Search routes for PaperLens API.
 Provides direct search and comparison endpoints that bypass the agent.
 """
 
+import re
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.memory.manager import get_memory_manager
 from src.services.llm import get_llm_service
@@ -23,16 +24,39 @@ router = APIRouter()
 # =========================================================================
 
 
+ARXIV_ID_PATTERN = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
+
+
+def validate_arxiv_id(arxiv_id: str) -> str:
+    """Validate ArXiv ID format."""
+    if not ARXIV_ID_PATTERN.match(arxiv_id):
+        raise HTTPException(status_code=400, detail=f"Invalid ArXiv ID format: {arxiv_id}")
+    return arxiv_id
+
+
 class SearchRequest(BaseModel):
     """Search request body."""
 
-    query: str = Field(..., min_length=1, description="Search query")
+    query: str = Field(..., min_length=1, max_length=1000, description="Search query")
     limit: int = Field(default=10, ge=1, le=50, description="Maximum results")
     year_from: int | None = Field(default=None, description="Filter from year")
     year_to: int | None = Field(default=None, description="Filter to year")
     categories: list[str] | None = Field(default=None, description="Filter by categories")
     use_personalization: bool = Field(default=True, description="Use user preferences")
     session_id: str | None = Field(default=None, description="Session for personalization")
+
+    @field_validator("year_from", "year_to")
+    @classmethod
+    def validate_year(cls, v: int | None) -> int | None:
+        if v is not None and (v < 1900 or v > 2100):
+            raise ValueError("Year must be between 1900 and 2100")
+        return v
+
+    @model_validator(mode="after")
+    def validate_year_range(self) -> "SearchRequest":
+        if self.year_from and self.year_to and self.year_from > self.year_to:
+            raise ValueError("year_from must be <= year_to")
+        return self
 
 
 class PaperResult(BaseModel):
@@ -155,7 +179,7 @@ async def search_papers(request: SearchRequest) -> SearchResponse:
 
     except Exception as e:
         logger.error("Search failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -260,7 +284,7 @@ Be concise but thorough. Use markdown formatting."""
         raise
     except Exception as e:
         logger.error("Comparison failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
@@ -330,4 +354,4 @@ async def get_related_papers(
         raise
     except Exception as e:
         logger.error("Failed to find related papers", arxiv_id=arxiv_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e

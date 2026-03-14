@@ -15,6 +15,7 @@ from typing import Any
 import structlog
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from src.api.routes import chat, search
@@ -53,8 +54,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
 # Include routers
@@ -83,7 +84,7 @@ class StatsResponse(BaseModel):
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+async def health_check() -> HealthResponse | JSONResponse:
     """
     Check API health status.
 
@@ -103,10 +104,13 @@ async def health_check() -> HealthResponse:
         )
     except Exception as e:
         logger.error("Health check failed", error=str(e))
-        return HealthResponse(
-            status="degraded",
-            version="0.1.0",
-            memory={"error": str(e)},
+        return JSONResponse(
+            status_code=503,
+            content=HealthResponse(
+                status="degraded",
+                version="0.1.0",
+                memory={"error": str(e)},
+            ).model_dump(),
         )
 
 
@@ -127,7 +131,7 @@ async def get_stats() -> StatsResponse:
         )
     except Exception as e:
         logger.error("Failed to get stats", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
@@ -171,7 +175,7 @@ async def submit_feedback(request: FeedbackRequest) -> FeedbackResponse:
         )
     except Exception as e:
         logger.error("Failed to record feedback", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 class HistoryResponse(BaseModel):
@@ -211,7 +215,7 @@ async def get_history(
         return HistoryResponse(queries=queries, total=len(queries))
     except Exception as e:
         logger.error("Failed to get history", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 class PreferencesResponse(BaseModel):
@@ -234,7 +238,7 @@ async def get_preferences() -> PreferencesResponse:
         return PreferencesResponse(preferences=prefs)
     except Exception as e:
         logger.error("Failed to get preferences", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
@@ -283,7 +287,7 @@ async def get_paper(arxiv_id: str) -> PaperResponse:
         raise
     except Exception as e:
         logger.error("Failed to get paper", arxiv_id=arxiv_id, error=str(e))
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 # =========================================================================
