@@ -5,6 +5,7 @@ Wraps the vector store to provide a unified interface for paper knowledge.
 Handles embedding, search, and retrieval of papers.
 """
 
+from functools import lru_cache
 from typing import Any
 
 import structlog
@@ -156,7 +157,7 @@ class SemanticMemory:
 
     def get_papers(self, arxiv_ids: list[str]) -> list[Paper]:
         """
-        Retrieve multiple papers by ArXiv ID.
+        Retrieve multiple papers by ArXiv ID using batch retrieve.
 
         Args:
             arxiv_ids: List of ArXiv IDs.
@@ -164,12 +165,39 @@ class SemanticMemory:
         Returns:
             List of found papers (may be shorter if some not found).
         """
-        papers = []
-        for arxiv_id in arxiv_ids:
-            paper = self.get_paper(arxiv_id)
-            if paper:
-                papers.append(paper)
-        return papers
+        if not arxiv_ids:
+            return []
+
+        try:
+            point_ids = [arxiv_id_to_point_id(aid) for aid in arxiv_ids]
+            points = self.vector_store.client.retrieve(
+                collection_name=self.vector_store.collection_name,
+                ids=point_ids,
+                with_payload=True,
+            )
+            papers = []
+            for point in points:
+                if point.payload:
+                    try:
+                        papers.append(Paper(
+                            arxiv_id=point.payload["arxiv_id"],
+                            title=point.payload["title"],
+                            abstract=point.payload["abstract"],
+                            authors=point.payload.get("authors", []),
+                            categories=point.payload.get("categories", []),
+                            citation_count=point.payload.get("citation_count", 0),
+                        ))
+                    except Exception:
+                        continue
+            return papers
+        except Exception as e:
+            logger.error("Batch retrieve failed, falling back to individual", error=str(e))
+            papers = []
+            for arxiv_id in arxiv_ids:
+                paper = self.get_paper(arxiv_id)
+                if paper:
+                    papers.append(paper)
+            return papers
 
     def find_related(
         self,
@@ -283,16 +311,11 @@ class SemanticMemory:
             return False
 
 
-# Singleton instance
-_semantic_memory: SemanticMemory | None = None
 
-
+@lru_cache(maxsize=1)
 def get_semantic_memory() -> SemanticMemory:
     """Get or create the semantic memory singleton."""
-    global _semantic_memory
-    if _semantic_memory is None:
-        _semantic_memory = SemanticMemory()
-    return _semantic_memory
+    return SemanticMemory()
 
 
 if __name__ == "__main__":
