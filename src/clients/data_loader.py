@@ -43,22 +43,26 @@ class HuggingFaceDataLoader:
         self,
         limit: int | None = None,
         categories: list[str] | None = None,
-    ) -> Iterator[Paper]:
+        offset: int = 0,
+    ) -> Iterator[tuple[int, Paper]]:
         """
         Iterate over papers in the dataset.
 
         Args:
             limit: Maximum number of papers to return. None = all.
             categories: Filter by ArXiv categories (e.g., ['cs.LG', 'cs.AI']).
+            offset: Number of dataset rows to skip from the beginning.
 
         Yields:
-            Paper objects.
+            Tuples of (dataset_index, Paper).
         """
         if self._dataset is None:
             self.load_dataset()
 
         count = 0
         for idx, item in enumerate(self._dataset):  # type: ignore[arg-type, var-annotated]
+            if idx < offset:
+                continue
             # Parse paper from dataset item
             paper = self._parse_paper(item, idx)
 
@@ -70,7 +74,7 @@ class HuggingFaceDataLoader:
                 if not any(cat in paper.categories for cat in categories):
                     continue
 
-            yield paper
+            yield idx, paper
             count += 1
 
             if limit and count >= limit:
@@ -167,7 +171,7 @@ class HuggingFaceDataLoader:
         Returns:
             List of Paper objects.
         """
-        return list(self.get_papers(limit=n))
+        return [paper for _, paper in self.get_papers(limit=n)]
 
     def __len__(self) -> int:
         """Return total number of papers in dataset."""
@@ -188,7 +192,7 @@ def load_ml_papers(limit: int | None = None) -> list[Paper]:
         List of Paper objects.
     """
     loader = HuggingFaceDataLoader()
-    return list(loader.get_papers(limit=limit))
+    return [paper for _, paper in loader.get_papers(limit=limit)]
 
 
 if __name__ == "__main__":

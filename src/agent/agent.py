@@ -390,7 +390,7 @@ class PaperLensAgent:
         Returns:
             Tool execution result.
         """
-        logger.debug("Executing tool", tool=tool_name, input=tool_input)
+        logger.info("Executing tool", tool=tool_name, input=tool_input)
 
         result = self.tools.execute(tool_name, **tool_input)
 
@@ -463,8 +463,10 @@ class PaperLensAgent:
                 items = []
                 for i, item in enumerate(data[:MAX_OBSERVATION_ITEMS]):
                     if "title" in item:
+                        score = item.get("score", item.get("similarity", ""))
+                        score_str = f", score={score}" if score else ""
                         items.append(
-                            f"{i+1}. {item['title'][:MAX_TITLE_CHARS]} ({item.get('arxiv_id', '?')})"
+                            f"{i+1}. {item['title'][:MAX_TITLE_CHARS]} (id={item.get('arxiv_id', '?')}{score_str})"
                         )
                     else:
                         items.append(f"{i+1}. {str(item)[:MAX_TITLE_CHARS]}")
@@ -514,14 +516,17 @@ class PaperLensAgent:
                 "Please try rephrasing your question or breaking it into simpler parts."
             )
 
-        # Gather all observations (tool results) as useful context
+        # Gather unique observations (tool results) as useful context
         observations = []
+        seen_observations: set[str] = set()
         last_thought = ""
         for step in steps:
             if step.thought:
                 last_thought = step.thought
             if step.observation and not step.observation.startswith("Error:"):
-                observations.append(step.observation)
+                if step.observation not in seen_observations:
+                    observations.append(step.observation)
+                    seen_observations.add(step.observation)
 
         if observations:
             obs_text = "\n\n".join(observations)

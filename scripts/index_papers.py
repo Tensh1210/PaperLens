@@ -19,6 +19,7 @@ Examples:
 """
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -54,11 +55,43 @@ logger = structlog.get_logger()
 console = Console()
 
 
+PROGRESS_FILE = project_root / "data" / "index_progress.json"
+
+
+def _save_progress(offset: int, total: int) -> None:
+    """Save current indexing progress to file."""
+    PROGRESS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PROGRESS_FILE.write_text(json.dumps({"offset": offset, "total": total}))
+
+
+def _load_progress() -> int:
+    """Load saved progress offset. Returns 0 if no progress file or corrupted."""
+    if PROGRESS_FILE.exists():
+        try:
+            data = json.loads(PROGRESS_FILE.read_text())
+            offset = data.get("offset", 0)
+            if not isinstance(offset, int) or offset < 0:
+                logger.warning("Invalid offset in progress file", offset=offset)
+                return 0
+            return offset
+        except (json.JSONDecodeError, OSError, TypeError):
+            logger.warning("Progress file corrupted, starting from beginning")
+            return 0
+    return 0
+
+
+def _clear_progress() -> None:
+    """Remove progress file after successful completion."""
+    if PROGRESS_FILE.exists():
+        PROGRESS_FILE.unlink()
+
+
 def index_papers(
     limit: int | None = None,
     batch_size: int = 50,
     recreate: bool = False,
     categories: list[str] | None = None,
+    offset: int | None = None,
 ) -> dict:
     """
     Index papers from HuggingFace into Qdrant.
@@ -68,6 +101,7 @@ def index_papers(
         batch_size: Number of papers to process at once.
         recreate: Whether to recreate the collection.
         categories: Filter by ArXiv categories.
+        offset: Start from this paper index (for resuming). None = auto-resume.
 
     Returns:
         Dict with indexing statistics.
@@ -95,6 +129,13 @@ def index_papers(
     console.print(f"[yellow]Setting up collection: {vector_store.collection_name}[/yellow]")
     vector_store.create_collection(recreate=recreate)
 
+    if recreate:
+        _clear_progress()
+
+    # Determine offset
+    if offset is None:
+        offset = _load_progress()
+
     # Get initial count
     initial_count = vector_store.count()
     console.print(f"[dim]Current papers in index: {initial_count}[/dim]")
@@ -104,12 +145,22 @@ def index_papers(
     loader.load_dataset()
 
     total_available = len(loader)
-    total_to_process = min(limit, total_available) if limit else total_available
+    total_to_process = min(limit, total_available - offset) if limit else total_available - offset
+    total_to_process = max(0, total_to_process)
+
+    if offset > 0:
+        console.print(f"[green]Resuming from paper #{offset}[/green]")
     console.print(f"[dim]Papers available: {total_available}[/dim]")
     console.print(f"[dim]Papers to process: {total_to_process}[/dim]\n")
 
+    if total_to_process == 0:
+        console.print("[green]All papers already indexed![/green]")
+        _clear_progress()
+        return stats
+
     # Process in batches
     batch_papers: list[Paper] = []
+    current_offset = offset
 
     with Progress(
         SpinnerColumn(),
@@ -120,9 +171,10 @@ def index_papers(
     ) as progress:
         task = progress.add_task("[cyan]Indexing papers...", total=total_to_process)
 
-        for paper in loader.get_papers(limit=limit, categories=categories):
+        for idx, paper in loader.get_papers(limit=limit, categories=categories, offset=offset):
             batch_papers.append(paper)
             stats["total_processed"] += 1
+            current_offset = idx + 1  # next paper to process
 
             # Process batch when full
             if len(batch_papers) >= batch_size:
@@ -131,6 +183,16 @@ def index_papers(
                 )
                 stats["total_indexed"] += indexed
                 stats["total_errors"] += errors
+
+                # Only save progress if batch had no total failure
+                if indexed > 0:
+                    _save_progress(current_offset, total_available)
+                else:
+                    logger.warning(
+                        "Batch failed, not advancing progress",
+                        offset=current_offset,
+                        errors=errors,
+                    )
 
                 progress.update(task, advance=len(batch_papers))
                 batch_papers = []
@@ -142,6 +204,8 @@ def index_papers(
             )
             stats["total_indexed"] += indexed
             stats["total_errors"] += errors
+            if indexed > 0:
+                _save_progress(current_offset, total_available)
             progress.update(task, advance=len(batch_papers))
 
     # Calculate duration
@@ -151,8 +215,14 @@ def index_papers(
     final_count = vector_store.count()
     stats["total_skipped"] = stats["total_processed"] - stats["total_indexed"] - stats["total_errors"]
 
-    # Print summary
-    console.print("\n[bold green]Indexing Complete![/bold green]\n")
+    # Clear progress file if all papers indexed
+    if current_offset >= total_available:
+        _clear_progress()
+        console.print("\n[bold green]Indexing Complete![/bold green]\n")
+    else:
+        console.print("\n[bold yellow]Indexing Paused[/bold yellow]")
+        console.print(f"  [dim]Progress saved. Run again to resume from paper #{current_offset}[/dim]\n")
+
     console.print(f"  Papers processed: {stats['total_processed']}")
     console.print(f"  Papers indexed:   {stats['total_indexed']}")
     console.print(f"  Papers skipped:   {stats['total_skipped']}")
@@ -286,6 +356,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--offset",
+        type=int,
+        default=None,
+        help="Start from this paper index (skip earlier papers)",
+    )
+
+    parser.add_argument(
         "--verify",
         action="store_true",
         help="Just verify the existing index",
@@ -303,6 +380,7 @@ Examples:
                 batch_size=args.batch_size,
                 recreate=args.recreate,
                 categories=args.categories,
+                offset=args.offset,
             )
 
             # Verify after indexing
@@ -313,7 +391,12 @@ Examples:
                 sys.exit(1)
 
     except KeyboardInterrupt:
-        console.print("\n[yellow]Indexing cancelled by user[/yellow]")
+        console.print("\n[yellow]Indexing cancelled by user.[/yellow]")
+        saved = _load_progress()
+        if saved > 0:
+            console.print(f"[dim]Progress saved at paper #{saved}. Run again to resume.[/dim]")
+        else:
+            console.print("[dim]No progress was saved (cancelled before first batch completed).[/dim]")
         sys.exit(130)
     except Exception as e:
         console.print(f"\n[red]Error: {e}[/red]")

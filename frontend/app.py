@@ -193,7 +193,7 @@ for message in st.session_state.messages:
         if message["role"] == "assistant" and message.get("papers"):
             with st.expander(f"📄 Referenced papers ({len(message['papers'])})"):
                 for paper_id in message["papers"][:5]:
-                    st.code(paper_id)
+                    st.text(f"ArXiv ID: {paper_id}")
 
 # Chat input
 if prompt := st.chat_input("Ask about papers..."):
@@ -217,7 +217,7 @@ if prompt := st.chat_input("Ask about papers..."):
                     st.session_state.papers_viewed.extend(papers)
                     with st.expander(f"📄 Referenced papers ({len(papers)})"):
                         for paper_id in papers[:5]:
-                            st.code(paper_id)
+                            st.text(f"ArXiv ID: {paper_id}")
 
                 # Add to messages
                 st.session_state.messages.append({

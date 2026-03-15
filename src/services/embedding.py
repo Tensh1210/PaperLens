@@ -35,11 +35,15 @@ class EmbeddingService:
     def model(self) -> SentenceTransformer:
         """Lazy load the model."""
         if self._model is None:
-            logger.info("Loading embedding model", model=self.model_name)
-            self._model = SentenceTransformer(self.model_name)
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info("Loading embedding model", model=self.model_name, device=device)
+            self._model = SentenceTransformer(self.model_name, device=device)
             logger.info(
                 "Model loaded",
                 model=self.model_name,
+                device=device,
                 dimension=self._model.get_sentence_embedding_dimension(),
             )
         return self._model
