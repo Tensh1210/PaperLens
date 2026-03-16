@@ -55,19 +55,19 @@ def get_api_client() -> httpx.Client:
 def run_agent_query(query: str, session_id: str) -> dict[str, Any]:
     """Run a query through the PaperLens API."""
     try:
-        with get_api_client() as client:
-            response = client.post(
-                "/api/chat",
-                json={"message": query, "session_id": session_id},
-            )
-            response.raise_for_status()
-            data = response.json()
-            return {
-                "success": True,
-                "response": data["response"],
-                "papers": data.get("papers", []),
-                "steps": data.get("steps_taken", 0),
-            }
+        client = get_api_client()
+        response = client.post(
+            "/api/chat",
+            json={"message": query, "session_id": session_id},
+        )
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "success": True,
+            "response": data["response"],
+            "papers": data.get("papers", []),
+            "steps": data.get("steps_taken", 0),
+        }
     except httpx.ConnectError:
         return {"success": False, "error": "Cannot connect to API. Is the backend running?"}
     except httpx.HTTPStatusError as e:
@@ -84,13 +84,10 @@ def format_paper_card(paper: dict[str, Any]) -> str:
     return f"""
 **{paper.get('title', 'Unknown Title')}**
 
-- **ArXiv ID**: `{paper.get('arxiv_id', 'N/A')}`
 - **Year**: {paper.get('year', 'N/A')}
 - **Score**: {paper.get('score', 0):.3f}
 
 {paper.get('abstract', 'No abstract available.')[:300]}{"..." if len(paper.get('abstract', '')) > 300 else ""}
-
-[📄 PDF]({paper.get('pdf_url', '#')}) | [🔗 ArXiv]({paper.get('arxiv_url', '#')})
 
 ---
 """
@@ -161,19 +158,19 @@ with st.sidebar:
     # Stats
     st.subheader("Stats")
     try:
-        with get_api_client() as client:
-            resp = client.get("/health")
-            if resp.status_code == 200:
-                health = resp.json()
-                memory_stats = health.get("memory", {})
-                semantic = memory_stats.get("semantic", {})
-                st.metric("Papers indexed", semantic.get("total_papers", 0))
-                st.metric(
-                    "Active sessions",
-                    memory_stats.get("working_sessions", 0),
-                )
-            else:
-                st.text("Stats unavailable")
+        client = get_api_client()
+        resp = client.get("/health")
+        if resp.status_code == 200:
+            health = resp.json()
+            memory_stats = health.get("memory", {})
+            semantic = memory_stats.get("semantic", {})
+            st.metric("Papers indexed", semantic.get("total_papers", 0))
+            st.metric(
+                "Active sessions",
+                memory_stats.get("working_sessions", 0),
+            )
+        else:
+            st.text("Stats unavailable")
     except Exception:
         st.text("API not reachable")
 
@@ -190,11 +187,6 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-        # Show papers if this is an assistant message with papers
-        if message["role"] == "assistant" and message.get("papers"):
-            with st.expander(f"📄 Referenced papers ({len(message['papers'])})"):
-                for paper_id in message["papers"][:5]:
-                    st.text(f"ArXiv ID: {paper_id}")
 
 # Chat input
 if prompt := st.chat_input("Ask about papers..."):
@@ -212,20 +204,10 @@ if prompt := st.chat_input("Ask about papers..."):
             if result["success"]:
                 st.markdown(result["response"])
 
-                # Store papers
-                papers = result.get("papers", [])
-                if papers:
-                    st.session_state.papers_viewed.extend(papers)
-                    st.session_state.papers_viewed = st.session_state.papers_viewed[-100:]
-                    with st.expander(f"📄 Referenced papers ({len(papers)})"):
-                        for paper_id in papers[:5]:
-                            st.text(f"ArXiv ID: {paper_id}")
-
                 # Add to messages
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["response"],
-                    "papers": papers,
                 })
             else:
                 error_msg = f"Sorry, I encountered an error: {result['error']}"

@@ -164,10 +164,9 @@ class GetPaperTool(Tool):
     def __init__(self, semantic_memory: SemanticMemory | None = None):
         self.semantic_memory = semantic_memory or get_semantic_memory()
 
-    def execute(self, arxiv_id: str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
+    def execute(self, arxiv_id: str | float | int, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         """Get paper details."""
-        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
-            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
+        arxiv_id = str(arxiv_id)
         try:
             paper = self.semantic_memory.get_paper(arxiv_id)
 
@@ -223,13 +222,12 @@ class GetRelatedPapersTool(Tool):
 
     def execute(  # type: ignore[override]
         self,
-        arxiv_id: str,
+        arxiv_id: str | float | int,
         limit: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """Find related papers."""
-        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
-            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
+        arxiv_id = str(arxiv_id)
         try:
             limit = max(1, min(limit, 100)) if limit else 5
 
@@ -407,13 +405,12 @@ class SummarizePaperTool(Tool):
 
     def execute(  # type: ignore[override]
         self,
-        arxiv_id: str,
+        arxiv_id: str | float | int,
         style: str = "detailed",
         **kwargs: Any,
     ) -> ToolResult:
         """Summarize a paper."""
-        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
-            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
+        arxiv_id = str(arxiv_id)
         try:
             paper = self.semantic_memory.get_paper(arxiv_id)
 

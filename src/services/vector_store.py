@@ -57,9 +57,19 @@ class VectorStore:
 
         self._client: QdrantClient | None = None
 
+    def _is_client_closed(self) -> bool:
+        """Check if the underlying httpx client has been closed."""
+        try:
+            return self._client._client.openapi_client.client._client.is_closed  # type: ignore[union-attr]
+        except (AttributeError, TypeError):
+            return True
+
     @property
     def client(self) -> QdrantClient:
-        """Lazy load the Qdrant client."""
+        """Lazy load the Qdrant client, reconnecting if closed."""
+        if self._client is not None and self._is_client_closed():
+            logger.warning("Qdrant client was closed, reconnecting")
+            self._client = None
         if self._client is None:
             logger.info("Connecting to Qdrant", host=self.host, port=self.port)
             self._client = QdrantClient(host=self.host, port=self.port)
