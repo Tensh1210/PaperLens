@@ -42,6 +42,7 @@ class WorkingMemory:
         """
         self.max_size = max_size or settings.memory_working_size
         self._sessions: dict[str, WorkingMemoryState] = {}
+        self._cleanup_counter = 0
 
         logger.info("Working memory initialized", max_size=self.max_size)
 
@@ -55,15 +56,18 @@ class WorkingMemory:
         Returns:
             Working memory state for the session.
         """
-        # Cleanup expired sessions
+        # Cleanup expired sessions periodically (every 50 calls)
+        self._cleanup_counter += 1
         now = datetime.now(UTC)
-        expired = [
-            sid for sid, state in self._sessions.items()
-            if (now - state.last_accessed).total_seconds() > SESSION_EXPIRY_SECONDS
-        ]
-        for sid in expired:
-            del self._sessions[sid]
-            logger.debug("Expired session cleaned up", session_id=sid)
+        if self._cleanup_counter >= 50:
+            self._cleanup_counter = 0
+            expired = [
+                sid for sid, state in self._sessions.items()
+                if (now - state.last_accessed).total_seconds() > SESSION_EXPIRY_SECONDS
+            ]
+            for sid in expired:
+                del self._sessions[sid]
+                logger.debug("Expired session cleaned up", session_id=sid)
 
         if session_id is None:
             session_id = str(uuid4())
@@ -187,6 +191,8 @@ class WorkingMemory:
         """
         state = self.get_session(session_id)
         state.add_paper(arxiv_id)
+        if len(state.retrieved_paper_ids) > 100:
+            state.retrieved_paper_ids = state.retrieved_paper_ids[-100:]
 
         logger.debug(
             "Added paper to working memory",

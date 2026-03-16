@@ -256,13 +256,16 @@ class MemoryManager:
                 if paper_cats & fav_categories:
                     boost += 0.05
 
-                # Topic match in title/abstract
+                # Topic match in title/abstract (cap topic boost at 0.06)
                 text = f"{result.paper.title} {result.paper.abstract}".lower()
+                topic_boost = 0.0
                 for topic in fav_topics:
                     if topic in text:
-                        boost += 0.02
+                        topic_boost += 0.02
+                boost += min(topic_boost, 0.06)
 
-                # Apply boost (cap at 1.0)
+                # Apply boost (cap total boost at 0.1)
+                boost = min(boost, 0.1)
                 result.score = min(1.0, result.score + boost)
 
             # Re-sort by boosted score
@@ -456,12 +459,24 @@ class MemoryManager:
         recent = await self.episodic.get_recent(limit=100, hours=168)  # Last week
 
         # Count frequently searched topics
+        stop_words = {
+            "about", "after", "again", "being", "between", "could", "does",
+            "doing", "during", "every", "first", "found", "from", "going",
+            "have", "having", "here", "into", "just", "know", "like", "make",
+            "many", "more", "most", "much", "need", "only", "other", "over",
+            "paper", "papers", "please", "really", "related", "search",
+            "should", "show", "since", "some", "still", "such", "tell",
+            "than", "that", "their", "them", "then", "there", "these",
+            "they", "this", "those", "through", "under", "using", "very",
+            "want", "were", "what", "when", "where", "which", "while",
+            "with", "would", "your", "find", "give", "also",
+        }
         topics: dict[str, int] = {}
         for mem in recent:
             # Simple keyword extraction from queries
             words = mem.query.lower().split()
             for word in words:
-                if len(word) > 4:  # Skip short words
+                if len(word) > 4 and word not in stop_words:
                     topics[word] = topics.get(word, 0) + 1
 
         # Reinforce frequent topics

@@ -89,7 +89,7 @@ class PaperSearchResult(BaseModel):
     """A paper with search relevance score."""
 
     paper: Paper
-    score: float = Field(..., ge=0.0, le=1.0, description="Similarity score")
+    score: float = Field(..., ge=0.0, le=1.01, description="Similarity score")
 
     def __lt__(self, other: "PaperSearchResult") -> bool:
         """Enable sorting by score (descending)."""
