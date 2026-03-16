@@ -46,6 +46,7 @@ if "papers_viewed" not in st.session_state:
 # Helper Functions
 # =========================================================================
 
+@st.cache_resource
 def get_api_client() -> httpx.Client:
     """Get a reusable HTTP client for the PaperLens API."""
     return httpx.Client(base_url=API_BASE_URL, timeout=120.0)
@@ -87,7 +88,7 @@ def format_paper_card(paper: dict[str, Any]) -> str:
 - **Year**: {paper.get('year', 'N/A')}
 - **Score**: {paper.get('score', 0):.3f}
 
-{paper.get('abstract', 'No abstract available.')[:300]}...
+{paper.get('abstract', 'No abstract available.')[:300]}{"..." if len(paper.get('abstract', '')) > 300 else ""}
 
 [📄 PDF]({paper.get('pdf_url', '#')}) | [🔗 ArXiv]({paper.get('arxiv_url', '#')})
 
@@ -150,8 +151,8 @@ with st.sidebar:
         "What papers have I looked at recently?",
     ]
 
-    for example in examples:
-        if st.button(example, key=f"example_{hash(example)}", use_container_width=True):
+    for i, example in enumerate(examples):
+        if st.button(example, key=f"example_{i}", use_container_width=True):
             st.session_state.messages.append({"role": "user", "content": example})
             st.rerun()
 
@@ -215,6 +216,7 @@ if prompt := st.chat_input("Ask about papers..."):
                 papers = result.get("papers", [])
                 if papers:
                     st.session_state.papers_viewed.extend(papers)
+                    st.session_state.papers_viewed = st.session_state.papers_viewed[-100:]
                     with st.expander(f"📄 Referenced papers ({len(papers)})"):
                         for paper_id in papers[:5]:
                             st.text(f"ArXiv ID: {paper_id}")

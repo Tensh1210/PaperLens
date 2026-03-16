@@ -37,7 +37,7 @@ services:
       - LOG_LEVEL=INFO
     volumes:
       - ./src:/app/src
-      - model_cache:/root/.cache
+      - model_cache:/home/appuser/.cache
     depends_on:
       - qdrant
     restart: unless-stopped
