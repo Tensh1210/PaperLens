@@ -5,6 +5,7 @@ Defines the tools available to the ReAct agent for paper search and analysis.
 Each tool has a schema for validation and structured output.
 """
 
+import re
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from typing import Any
@@ -112,7 +113,7 @@ class SearchPapersTool(Tool):
     ) -> ToolResult:
         """Execute paper search."""
         try:
-            limit = limit or settings.search_top_k
+            limit = max(1, min(limit, 100)) if limit else settings.search_top_k
 
             results = self.semantic_memory.search(
                 query=query,
@@ -165,6 +166,8 @@ class GetPaperTool(Tool):
 
     def execute(self, arxiv_id: str, **kwargs: Any) -> ToolResult:  # type: ignore[override]
         """Get paper details."""
+        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
+            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
         try:
             paper = self.semantic_memory.get_paper(arxiv_id)
 
@@ -225,8 +228,10 @@ class GetRelatedPapersTool(Tool):
         **kwargs: Any,
     ) -> ToolResult:
         """Find related papers."""
+        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
+            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
         try:
-            limit = limit or 5
+            limit = max(1, min(limit, 100)) if limit else 5
 
             results = self.semantic_memory.find_related(
                 arxiv_id=arxiv_id,
@@ -407,6 +412,8 @@ class SummarizePaperTool(Tool):
         **kwargs: Any,
     ) -> ToolResult:
         """Summarize a paper."""
+        if not re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', arxiv_id):
+            return ToolResult(success=False, error=f"Invalid ArXiv ID format: {arxiv_id}")
         try:
             paper = self.semantic_memory.get_paper(arxiv_id)
 

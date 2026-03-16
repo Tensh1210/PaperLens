@@ -285,7 +285,7 @@ def format_search_results(results: list[dict]) -> str:
         return RESPONSE_TEMPLATES["no_results"].format(query="your search")
 
     papers_list = "\n".join([
-        f"{i+1}. **{r['title']}** ({r['arxiv_id']}, {r.get('year', 'N/A')}) - Score: {r['score']:.2f}"
+        f"{i+1}. **{r['title']}** ({r['arxiv_id']}, {r.get('year', 'N/A')}) - Score: {r.get('score', r.get('similarity', 0)):.2f}"
         for i, r in enumerate(results)
     ])
 

@@ -117,7 +117,7 @@ class PaperLensAgent:
         self.memory = working_memory or get_working_memory()
         self.memory_manager = memory_manager or get_memory_manager()
         self.planner = planner or get_planner()
-        self.max_iterations = max_iterations or settings.agent_max_iterations
+        self.max_iterations = max_iterations if max_iterations is not None else settings.agent_max_iterations
 
         logger.info(
             "Agent initialized",
@@ -183,6 +183,8 @@ class PaperLensAgent:
                 metadata={"iterations": len(steps)},
             )
 
+        except AgentError:
+            raise
         except Exception as e:
             logger.error("Agent run failed", session_id=session_id, error=str(e))
             raise AgentError(f"Agent failed: {e}") from e

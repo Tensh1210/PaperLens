@@ -229,11 +229,11 @@ class QueryPlanner:
         if match:
             filters["year_to"] = int(match.group(2))
 
-        # "in 2023", "2023 papers"
-        match = re.search(r'\b(in\s+)?(\d{4})(\s+papers?)?\b', query)
+        # "in 2023", "2023 papers" — require context (prefix or suffix)
+        match = re.search(r'\b(?:(in)\s+(\d{4})|((\d{4})\s+papers?))\b', query)
         if match and not filters:
-            year = int(match.group(2))
-            if 2000 <= year <= datetime.now().year + 1:
+            year = int(match.group(2) or match.group(4))
+            if 1990 <= year <= datetime.now().year + 1:
                 filters["year_from"] = year
                 filters["year_to"] = year
 
