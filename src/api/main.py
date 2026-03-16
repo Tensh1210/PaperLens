@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -188,7 +188,7 @@ class HistoryResponse(BaseModel):
 @app.get("/api/memory/history", response_model=HistoryResponse)
 async def get_history(
     session_id: str | None = None,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
 ) -> HistoryResponse:
     """
     Get search history.

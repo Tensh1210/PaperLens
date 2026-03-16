@@ -265,12 +265,16 @@ class LLMService:
                     output_length=len(content) if content else 0,
                 )
                 return content or ""
-            except (RateLimitError, Exception) as e:
-                if isinstance(e, RateLimitError) or "rate_limit" in str(e).lower():
-                    logger.warning("Rate limit hit (async), trying next", model=model)
+            except (RateLimitError, NotFoundError) as e:
+                logger.warning("Provider error (async), trying next", model=model, error=str(e))
+                errors.append((model, str(e)))
+                continue
+            except Exception as e:
+                if "rate_limit" in str(e).lower() or "429" in str(e):
+                    logger.warning("Rate limit hit (async), trying next provider", model=model)
                     errors.append((model, str(e)))
                     continue
-                logger.error("Async chat completion failed", error=str(e))
+                logger.error("Async chat completion failed", model=model, error=str(e))
                 raise LLMError(f"Chat completion failed ({model}): {e}") from e
 
         raise LLMRateLimitError(f"All providers rate limited: {errors}")

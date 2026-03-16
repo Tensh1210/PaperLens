@@ -4,6 +4,7 @@ Search routes for PaperLens API.
 Provides direct search and comparison endpoints that bypass the agent.
 """
 
+import asyncio
 import re
 from typing import Any
 
@@ -263,7 +264,7 @@ Be concise but thorough. Use markdown formatting."""
             {"role": "user", "content": prompt},
         ]
 
-        comparison = llm.chat_completion(messages, max_tokens=2000)
+        comparison = await asyncio.to_thread(llm.chat_completion, messages, max_tokens=2000)
 
         logger.info("Comparison generated", paper_count=len(papers))
 

@@ -4,6 +4,7 @@ Chat routes for PaperLens API.
 Provides the main agentic chat interface for interacting with the paper search engine.
 """
 
+import asyncio
 import json as json_module
 from collections.abc import AsyncIterator
 from typing import Any
@@ -29,7 +30,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     """Chat request body."""
 
-    message: str = Field(..., min_length=1, description="User message")
+    message: str = Field(..., min_length=1, max_length=5000, description="User message")
     session_id: str | None = Field(default=None, description="Session ID for context")
 
 
@@ -96,8 +97,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             message_length=len(request.message),
         )
 
-        # Run the agent
-        result = agent.run(request.message, session_id=session_id)
+        # Run the agent in a thread to avoid blocking the event loop
+        result = await asyncio.to_thread(agent.run, request.message, session_id=session_id)
 
         logger.info(
             "Chat response generated",
@@ -141,7 +142,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             try:
                 # For now, we run the full agent and return the result
                 # True streaming would require restructuring the ReAct loop
-                result = agent.run(request.message, session_id=session_id)
+                result = await asyncio.to_thread(agent.run, request.message, session_id=session_id)
 
                 # Send metadata first as valid single-line JSON
                 metadata = json_module.dumps({
@@ -161,7 +162,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 yield "data: [DONE]\n\n"
 
             except Exception as e:
-                yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+                yield f"data: {json_module.dumps({'error': str(e)})}\n\n"
 
         return StreamingResponse(
             generate(),
