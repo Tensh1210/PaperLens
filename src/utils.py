@@ -3,12 +3,14 @@
 import asyncio
 import concurrent.futures
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, TypeVar
 
 _executor: concurrent.futures.ThreadPoolExecutor | None = None
 
+T = TypeVar("T")
 
-def run_sync(coro: Coroutine[Any, Any, Any], timeout: int = 30) -> Any:
+
+def run_sync(coro: Coroutine[Any, Any, T], timeout: int = 30) -> T:
     """Run an async coroutine from sync context.
 
     Handles both cases:
