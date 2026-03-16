@@ -79,6 +79,7 @@ class EpisodicMemoryStore:
         """
         self.db_path = db_path or settings.memory_db_path
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
         # Ensure directory exists
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -88,10 +89,12 @@ class EpisodicMemoryStore:
     async def _ensure_initialized(self, conn: aiosqlite.Connection) -> None:
         """Ensure schema exists."""
         if not self._initialized:
-            await conn.executescript(SCHEMA)
-            await conn.commit()
-            self._initialized = True
-            logger.debug("Database schema initialized")
+            async with self._init_lock:
+                if not self._initialized:
+                    await conn.executescript(SCHEMA)
+                    await conn.commit()
+                    self._initialized = True
+                    logger.debug("Database schema initialized")
 
     async def store(self, memory: EpisodicMemory) -> str:
         """
@@ -295,30 +298,53 @@ class EpisodicMemoryStore:
             paper_id: Paper ArXiv ID.
             liked: Whether the paper was liked.
         """
-        memory = await self.get(memory_id)
-        if not memory:
-            logger.warning("Memory not found for feedback", id=memory_id)
-            return
-
-        memory.add_feedback(paper_id, liked)
-
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = aiosqlite.Row
             await self._ensure_initialized(conn)
-            await conn.execute(
-                """
-                UPDATE episodic_memories
-                SET liked_paper_ids = ?, disliked_paper_ids = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    json.dumps(memory.liked_paper_ids),
-                    json.dumps(memory.disliked_paper_ids),
-                    datetime.now(UTC).isoformat(),
-                    memory_id,
-                ),
-            )
-            await conn.commit()
+
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await conn.execute(
+                    "SELECT liked_paper_ids, disliked_paper_ids FROM episodic_memories WHERE id = ?",
+                    (memory_id,),
+                )
+                row = await cursor.fetchone()
+                if not row:
+                    await conn.rollback()
+                    logger.warning("Memory not found for feedback", id=memory_id)
+                    return
+
+                liked_ids = json.loads(row["liked_paper_ids"]) if row["liked_paper_ids"] else []
+                disliked_ids = json.loads(row["disliked_paper_ids"]) if row["disliked_paper_ids"] else []
+
+                if liked:
+                    if paper_id not in liked_ids:
+                        liked_ids.append(paper_id)
+                    if paper_id in disliked_ids:
+                        disliked_ids.remove(paper_id)
+                else:
+                    if paper_id not in disliked_ids:
+                        disliked_ids.append(paper_id)
+                    if paper_id in liked_ids:
+                        liked_ids.remove(paper_id)
+
+                await conn.execute(
+                    """
+                    UPDATE episodic_memories
+                    SET liked_paper_ids = ?, disliked_paper_ids = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        json.dumps(liked_ids),
+                        json.dumps(disliked_ids),
+                        datetime.now(UTC).isoformat(),
+                        memory_id,
+                    ),
+                )
+                await conn.commit()
+            except Exception:
+                await conn.rollback()
+                raise
 
         logger.debug("Added feedback", memory_id=memory_id, paper_id=paper_id, liked=liked)
 
@@ -581,11 +607,13 @@ class EpisodicMemoryStore:
     # Sync wrappers for convenience
     def store_sync(self, memory: EpisodicMemory) -> str:
         """Synchronous wrapper for store."""
-        return asyncio.run(self.store(memory))
+        from src.utils import run_sync
+        return run_sync(self.store(memory))
 
     def get_recent_sync(self, **kwargs: Any) -> list[EpisodicMemory]:
         """Synchronous wrapper for get_recent."""
-        return asyncio.run(self.get_recent(**kwargs))
+        from src.utils import run_sync
+        return run_sync(self.get_recent(**kwargs))
 
 
 

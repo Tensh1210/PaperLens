@@ -5,6 +5,7 @@ SPECTER2 is specifically designed for scientific papers and provides
 high-quality embeddings for academic text.
 """
 
+import threading
 from collections.abc import Sequence
 from functools import lru_cache
 
@@ -30,22 +31,25 @@ class EmbeddingService:
         """
         self.model_name = model_name or settings.embedding_model
         self._model: SentenceTransformer | None = None
+        self._lock = threading.Lock()
 
     @property
     def model(self) -> SentenceTransformer:
         """Lazy load the model."""
         if self._model is None:
-            import torch
+            with self._lock:
+                if self._model is None:
+                    import torch
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.info("Loading embedding model", model=self.model_name, device=device)
-            self._model = SentenceTransformer(self.model_name, device=device)
-            logger.info(
-                "Model loaded",
-                model=self.model_name,
-                device=device,
-                dimension=self._model.get_sentence_embedding_dimension(),
-            )
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    logger.info("Loading embedding model", model=self.model_name, device=device)
+                    self._model = SentenceTransformer(self.model_name, device=device)
+                    logger.info(
+                        "Model loaded",
+                        model=self.model_name,
+                        device=device,
+                        dimension=self._model.get_sentence_embedding_dimension(),
+                    )
         return self._model
 
     @property

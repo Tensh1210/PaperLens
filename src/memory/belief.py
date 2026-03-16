@@ -67,8 +67,9 @@ class BeliefMemoryStore:
             decay_factor: Confidence decay factor. Defaults to config value.
         """
         self.db_path = db_path or settings.memory_db_path
-        self.decay_factor = decay_factor or settings.memory_belief_decay
+        self.decay_factor = decay_factor if decay_factor is not None else settings.memory_belief_decay
         self._initialized = False
+        self._init_lock = asyncio.Lock()
 
         # Ensure directory exists
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -82,12 +83,14 @@ class BeliefMemoryStore:
     async def _ensure_initialized(self, conn: aiosqlite.Connection) -> None:
         """Ensure schema exists."""
         if not self._initialized:
-            await conn.executescript(SCHEMA)
-            await conn.commit()
-            self._initialized = True
-            logger.debug("Belief database schema initialized")
+            async with self._init_lock:
+                if not self._initialized:
+                    await conn.executescript(SCHEMA)
+                    await conn.commit()
+                    self._initialized = True
+                    logger.debug("Belief database schema initialized")
 
-    async def store(self, belief: BeliefMemory) -> str:
+    async def store(self, belief: BeliefMemory, strength: float | None = None) -> str:
         """
         Store or update a belief.
 
@@ -96,6 +99,7 @@ class BeliefMemoryStore:
 
         Args:
             belief: BeliefMemory to store.
+            strength: Reinforcement strength (0-1). Defaults to belief's confidence.
 
         Returns:
             Belief ID.
@@ -115,10 +119,11 @@ class BeliefMemoryStore:
                 existing = await cursor.fetchone()
 
                 if existing:
-                    # Reinforce existing belief
+                    # Reinforce existing belief using actual strength
+                    reinforce_strength = strength if strength is not None else belief.confidence
                     new_confidence = min(
                         1.0,
-                        existing["confidence"] + 0.1 * (1 - existing["confidence"])
+                        existing["confidence"] + reinforce_strength * (1 - existing["confidence"])
                     )
                     new_count = existing["reinforcement_count"] + 1
 
@@ -365,7 +370,7 @@ class BeliefMemoryStore:
             confidence=0.5,
             source_memory_ids=[source_memory_id] if source_memory_id else [],
         )
-        return await self.store(belief)
+        return await self.store(belief, strength=strength)
 
     async def confirm(self, belief_id: str) -> None:
         """
@@ -445,6 +450,8 @@ class BeliefMemoryStore:
         """
         Set a user preference directly.
 
+        Performs store + confirm atomically in a single connection.
+
         Args:
             belief_type: Type of preference.
             value: Preference value.
@@ -453,18 +460,73 @@ class BeliefMemoryStore:
         Returns:
             Belief ID.
         """
-        belief = BeliefMemory(
-            belief_type=belief_type,
-            value=value,
-            confidence=0.9 if user_confirmed else 0.5,
-            user_confirmed=user_confirmed,
-        )
+        confidence = 0.9 if user_confirmed else 0.5
 
-        belief_id = await self.store(belief)
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = aiosqlite.Row
+            await self._ensure_initialized(conn)
 
-        if user_confirmed:
-            await self.confirm(belief_id)
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = await conn.execute(
+                    "SELECT id, confidence FROM beliefs WHERE belief_type = ? AND value = ?",
+                    (belief_type.value, value),
+                )
+                existing = await cursor.fetchone()
 
+                if existing:
+                    new_confidence = max(confidence, existing["confidence"])
+                    if user_confirmed:
+                        new_confidence = max(new_confidence, 0.8)
+                    await conn.execute(
+                        """
+                        UPDATE beliefs
+                        SET confidence = ?, user_confirmed = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (
+                            new_confidence,
+                            1 if user_confirmed else 0,
+                            datetime.now(UTC).isoformat(),
+                            existing["id"],
+                        ),
+                    )
+                    await conn.commit()
+                    belief_id: str = existing["id"]
+                else:
+                    belief = BeliefMemory(
+                        belief_type=belief_type,
+                        value=value,
+                        confidence=confidence,
+                        user_confirmed=user_confirmed,
+                    )
+                    await conn.execute(
+                        """
+                        INSERT INTO beliefs (
+                            id, created_at, updated_at, belief_type, value, confidence,
+                            reinforcement_count, source_memory_ids, user_confirmed, metadata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            belief.id,
+                            belief.created_at.isoformat(),
+                            belief.updated_at.isoformat(),
+                            belief.belief_type.value,
+                            belief.value,
+                            confidence,
+                            1,
+                            json.dumps([]),
+                            1 if user_confirmed else 0,
+                            json.dumps({}),
+                        ),
+                    )
+                    await conn.commit()
+                    belief_id = belief.id
+            except Exception:
+                await conn.rollback()
+                raise
+
+        logger.debug("Set preference", type=belief_type.value, value=value, id=belief_id)
         return belief_id
 
     async def get_preferences_summary(self) -> dict[str, Any]:
@@ -578,11 +640,13 @@ class BeliefMemoryStore:
     # Sync wrappers for convenience
     def get_preferences_summary_sync(self) -> dict[str, Any]:
         """Synchronous wrapper for get_preferences_summary."""
-        return asyncio.run(self.get_preferences_summary())
+        from src.utils import run_sync
+        return run_sync(self.get_preferences_summary())
 
     def reinforce_sync(self, belief_type: BeliefType, value: str, **kwargs: Any) -> str:
         """Synchronous wrapper for reinforce."""
-        return asyncio.run(self.reinforce(belief_type, value, **kwargs))
+        from src.utils import run_sync
+        return run_sync(self.reinforce(belief_type, value, **kwargs))
 
 
 
