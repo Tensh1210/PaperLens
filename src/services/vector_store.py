@@ -60,7 +60,7 @@ class VectorStore:
     def _is_client_closed(self) -> bool:
         """Check if the underlying httpx client has been closed."""
         try:
-            return self._client._client.openapi_client.client._client.is_closed  # type: ignore[union-attr]
+            return bool(self._client._client.openapi_client.client._client.is_closed)  # type: ignore[union-attr]
         except (AttributeError, TypeError):
             return True
 

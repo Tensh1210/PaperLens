@@ -5,7 +5,6 @@ Defines the tools available to the ReAct agent for paper search and analysis.
 Each tool has a schema for validation and structured output.
 """
 
-import re
 from abc import ABC, abstractmethod
 from functools import lru_cache
 from typing import Any
