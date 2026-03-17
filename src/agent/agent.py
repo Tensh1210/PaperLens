@@ -30,9 +30,9 @@ from src.utils import run_sync
 logger = structlog.get_logger()
 
 # Truncation constants for observations
-MAX_OBSERVATION_CHARS = 300
-MAX_OBSERVATION_ITEMS = 5
-MAX_TITLE_CHARS = 60
+MAX_OBSERVATION_CHARS = 500
+MAX_OBSERVATION_ITEMS = 8
+MAX_TITLE_CHARS = 100
 
 
 class AgentError(Exception):
@@ -232,7 +232,12 @@ class PaperLensAgent:
             if steps:
                 history = self._format_steps_for_prompt(steps)
                 messages.append({"role": "assistant", "content": history})
-                messages.append({"role": "user", "content": "Continue your reasoning:"})
+
+                # Nudge to wrap up when running low on iterations
+                if iteration >= self.max_iterations - 2:
+                    messages.append({"role": "user", "content": "You are running out of steps. You MUST provide FINAL_ANSWER now based on the information you already have. Synthesize your observations into a helpful response."})
+                else:
+                    messages.append({"role": "user", "content": "Continue your reasoning:"})
 
             # Generate response
             response = self.llm.chat_completion(
@@ -466,9 +471,11 @@ class PaperLensAgent:
                 for i, item in enumerate(data[:MAX_OBSERVATION_ITEMS]):
                     if "title" in item:
                         score = item.get("score", item.get("similarity", ""))
-                        score_str = f", score={score}" if score else ""
+                        score_str = f" (score={score})" if score else ""
+                        abstract = item.get("abstract_preview", "")
+                        abstract_str = f"\n   {abstract}" if abstract else ""
                         items.append(
-                            f"{i+1}. {item['title'][:MAX_TITLE_CHARS]} (id={item.get('arxiv_id', '?')}{score_str})"
+                            f"{i+1}. {item['title'][:MAX_TITLE_CHARS]}{score_str}{abstract_str}"
                         )
                     else:
                         items.append(f"{i+1}. {str(item)[:MAX_TITLE_CHARS]}")
@@ -504,6 +511,7 @@ class PaperLensAgent:
         """Build the best possible response from partial reasoning steps.
 
         Called when the agent hits max iterations without producing a FINAL_ANSWER.
+        Uses LLM to synthesize observations into a coherent response.
 
         Args:
             session_id: Session ID.
@@ -521,34 +529,46 @@ class PaperLensAgent:
         # Gather unique observations (tool results) as useful context
         observations = []
         seen_observations: set[str] = set()
-        last_thought = ""
+        query = self.memory.get_session(session_id).current_query or ""
         for step in steps:
-            if step.thought:
-                last_thought = step.thought
             if step.observation and not step.observation.startswith("Error:"):
                 if step.observation not in seen_observations:
                     observations.append(step.observation)
                     seen_observations.add(step.observation)
 
-        if observations:
-            obs_text = "\n\n".join(observations)
+        if not observations:
             return (
-                "I gathered some information but could not fully complete my analysis. "
+                "I was unable to complete the analysis within the allowed steps. "
+                "Please try a simpler or more specific question."
+            )
+
+        # Use LLM to synthesize observations into a proper response
+        obs_text = "\n\n".join(observations)
+        try:
+            synthesis = self.llm.chat_completion(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"User asked: {query}\n\n"
+                            f"Here are the search results:\n{obs_text}\n\n"
+                            "Synthesize these results into a helpful, well-structured response. "
+                            "Reference papers by title only. Include a 'Related Papers' section. "
+                            "ONLY mention papers from the search results above — do NOT add papers from your own knowledge."
+                        ),
+                    },
+                ],
+                temperature=settings.agent_temperature,
+            )
+            return synthesis.strip()
+        except Exception as e:
+            logger.warning("Failed to synthesize partial response", error=str(e))
+            # Fallback: return raw observations
+            return (
                 f"Here is what I found:\n\n{obs_text}\n\n"
                 "You may want to refine your query for more specific results."
             )
-
-        if last_thought:
-            return (
-                "I was still working through the analysis. "
-                f"My last reasoning: {last_thought}\n\n"
-                "Please try a more focused query."
-            )
-
-        return (
-            "I was unable to complete the analysis within the allowed steps. "
-            "Please try a simpler or more specific question."
-        )
 
     def _build_context(self, session_id: str) -> str:
         """Build context string for the agent."""

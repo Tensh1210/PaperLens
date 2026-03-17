@@ -73,8 +73,7 @@ class SearchPapersTool(Tool):
     name = "search_papers"
     description = (
         "Search for academic papers using natural language. "
-        "Returns papers ranked by semantic similarity to the query. "
-        "Do NOT use year or category filters unless the user explicitly asks for them."
+        "Returns papers ranked by semantic similarity to the query."
     )
     parameters = {
         "query": {
@@ -87,16 +86,6 @@ class SearchPapersTool(Tool):
             "description": "Maximum number of papers to return (default: 10)",
             "required": False,
         },
-        "year_from": {
-            "type": "integer",
-            "description": "Only use if user asks for a specific time range",
-            "required": False,
-        },
-        "year_to": {
-            "type": "integer",
-            "description": "Only use if user asks for a specific time range",
-            "required": False,
-        },
     }
 
     def __init__(self, semantic_memory: SemanticMemory | None = None):
@@ -106,8 +95,6 @@ class SearchPapersTool(Tool):
         self,
         query: str,
         limit: int | None = None,
-        year_from: int | None = None,
-        year_to: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         """Execute paper search."""
@@ -117,8 +104,6 @@ class SearchPapersTool(Tool):
             results = self.semantic_memory.search(
                 query=query,
                 limit=limit,
-                year_from=year_from,
-                year_to=year_to,
             )
 
             # Format results for agent
