@@ -1,8 +1,22 @@
+<div align="center">
+
 # PaperLens
 
 **Agentic RAG-based ML Paper Search & Comparison Engine**
 
-PaperLens is an intelligent research assistant that helps ML researchers find, understand, and compare academic papers using state-of-the-art Agentic RAG architecture.
+[![CI](https://github.com/Tensh1210/PaperLens/actions/workflows/ci.yml/badge.svg)](https://github.com/Tensh1210/PaperLens/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-E10098.svg)](https://docs.astral.sh/ruff/)
+[![Type check: mypy](https://img.shields.io/badge/type%20check-mypy-blue.svg)](https://mypy-lang.org/)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688.svg)](https://fastapi.tiangolo.com/)
+[![Qdrant](https://img.shields.io/badge/Vector%20DB-Qdrant-DC382D.svg)](https://qdrant.tech/)
+
+An intelligent research assistant that helps ML researchers **find**, **understand**, and **compare** 117k+ academic papers using a custom ReAct agent with 4-layer memory.
+
+[Features](#features) · [Demo](#demo) · [Quick Start](#quick-start) · [Architecture](#architecture) · [API](#api-endpoints)
+
+</div>
 
 ## Features
 
@@ -12,6 +26,55 @@ PaperLens is an intelligent research assistant that helps ML researchers find, u
 - **4-Layer Memory System**: Semantic (Qdrant), Episodic (SQLite), Working (RAM), Belief (SQLite)
 - **Personalization**: Learns user preferences via belief memory with confidence decay
 - **Multi-Provider LLM**: Supports Groq, Cerebras, and OpenAI via LiteLLM
+
+## Demo
+
+<div align="center">
+
+![Chat Demo](docs/screenshots/chat-demo.png)
+
+</div>
+
+## Example Usage
+
+### Chat with the Agent
+
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Find papers about vision transformers", "session_id": "demo"}'
+```
+
+<details>
+<summary>Response</summary>
+
+```json
+{
+  "response": "Here are some key papers about Vision Transformers:\n\n1. **An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale** (2020)\n   Introduces ViT, applying pure transformer architecture directly to image patches...\n\n2. **DeiT: Training Data-Efficient Image Transformers** (2020)\n   Proposes knowledge distillation strategies for training ViT without large-scale datasets...",
+  "papers": [
+    {"title": "An Image is Worth 16x16 Words...", "year": 2020, "score": 0.892},
+    {"title": "Training Data-Efficient Image Transformers...", "year": 2020, "score": 0.856}
+  ],
+  "steps_taken": 3,
+  "session_id": "demo"
+}
+```
+
+</details>
+
+### Semantic Search
+
+```bash
+curl "http://localhost:8000/api/search?query=attention+mechanism&limit=5"
+```
+
+### Compare Papers
+
+```bash
+curl -X POST http://localhost:8000/api/compare \
+  -H "Content-Type: application/json" \
+  -d '{"paper_ids": ["1706.03762", "1810.04805"]}'
+```
 
 ## Architecture
 
@@ -153,6 +216,31 @@ QDRANT_PORT=6333
 AGENT_MAX_ITERATIONS=5               # Max ReAct loops
 AGENT_TEMPERATURE=0.7
 ```
+
+## Performance
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Papers indexed** | 117,592 | CShorten/ML-ArXiv-Papers dataset |
+| **Embedding dimensions** | 768 | SPECTER2 (allenai-specter) |
+| **Vector index** | HNSW | Cosine similarity, Qdrant |
+| **Avg search latency** | ~200ms | Qdrant query + embedding |
+| **Agent response time** | 3-8s | 2-4 ReAct iterations via Groq |
+| **LLM inference** | Groq | Llama 3.3 70B, ~500 tokens/s |
+| **Memory footprint** | ~1.2 GB | SPECTER2 model in RAM |
+
+> Benchmarked on RTX 3050 Laptop + Groq free tier. Latency depends on LLM provider.
+
+## Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Custom ReAct agent** (no LangChain) | Full control over parsing, stop sequences, and tool orchestration. No framework lock-in, easier debugging |
+| **SPECTER2** over general embeddings | Trained on scientific citation graphs — understands paper semantics far better than `text-embedding-ada-002` for academic search |
+| **4-layer memory** | Mirrors cognitive architecture: semantic (knowledge), episodic (experience), working (context), belief (preferences). Enables personalization without fine-tuning |
+| **Groq + LiteLLM** | Groq provides fastest inference for ReAct loops (~500 tok/s). LiteLLM allows hot-swapping providers without code changes |
+| **Qdrant** over Pinecone/Weaviate | Self-hosted (no vendor lock-in), rich payload filtering, native HNSW with quantization support |
+| **Confidence decay** in belief memory | Prevents stale preferences from dominating. Factor 0.95 per interaction, auto-prune below 0.1 |
 
 ## Roadmap
 
