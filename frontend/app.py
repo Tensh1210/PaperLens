@@ -182,29 +182,36 @@ with st.sidebar:
 st.title("🔬 PaperLens Chat")
 st.caption("Ask questions about ML papers, compare research, or explore the literature.")
 
+# Check if last message needs a response (from button clicks)
+needs_response = (
+    st.session_state.messages
+    and st.session_state.messages[-1]["role"] == "user"
+    and (
+        len(st.session_state.messages) < 2
+        or st.session_state.messages[-2]["role"] != "assistant"
+        or st.session_state.messages[-1] is not st.session_state.messages[-2]
+    )
+)
+# Only trigger for button clicks: last msg is user with no assistant reply after it
+pending_query = None
+if needs_response:
+    # Check there's no assistant response yet for this user message
+    pending_query = st.session_state.messages[-1]["content"]
+
 # Display chat messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 
-# Chat input
-if prompt := st.chat_input("Ask about papers..."):
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    # Get agent response
+def _process_query(query: str) -> None:
+    """Send query to API and display response."""
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            result = run_agent_query(prompt, st.session_state.session_id)
+            result = run_agent_query(query, st.session_state.session_id)
 
             if result["success"]:
                 st.markdown(result["response"])
-
-                # Add to messages
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result["response"],
@@ -216,6 +223,20 @@ if prompt := st.chat_input("Ask about papers..."):
                     "role": "assistant",
                     "content": error_msg,
                 })
+
+
+# Handle pending query from button clicks
+if pending_query:
+    _process_query(pending_query)
+
+# Chat input
+if prompt := st.chat_input("Ask about papers..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    _process_query(prompt)
 
 
 # =========================================================================
